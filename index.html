@@ -173,19 +173,9 @@
 
     /* YouTube Section */
     .youtube-container {
-      display: grid;
-      grid-template-columns: 2fr 1fr;
-      gap: 2rem;
+      display: flex;
+      justify-content: center;
       margin-top: 2rem;
-      align-items: start;
-    }
-
-    .youtube-embed {
-      aspect-ratio: 16 / 9;
-      background: #1a1a1a;
-      border: 1px solid #2a2a2a;
-      border-radius: 8px;
-      overflow: hidden;
     }
 
     .youtube-info {
@@ -193,6 +183,8 @@
       border: 1px solid #2a2a2a;
       border-radius: 8px;
       padding: 2rem;
+      max-width: 600px;
+      text-align: center;
     }
 
     .youtube-info h4 {
@@ -208,8 +200,8 @@
     }
 
     @media (max-width: 768px) {
-      .youtube-container {
-        grid-template-columns: 1fr;
+      .youtube-info {
+        max-width: 100%;
       }
     }
 
@@ -319,7 +311,7 @@
       <!-- Add more app cards here -->
       <div class="app-card">
         <h4>Snake Soo Hungry!!</h4>
-        <p>Classic snake game with a twist! Avoid obstacles as they appear every 10 mice. Features smooth controls and local high score tracking.</p>
+        <p>Feed the snake, the snake is soo hungry, but careful not to smash into anything</p>
         <div class="app-buttons">
           <a href="snake-game.html" class="btn btn-primary">Launch App</a>
           <a href="snake-game.html" download class="btn btn-secondary">Download</a>
@@ -334,20 +326,9 @@
   <section id="animations">
     <h3>YouTube Channel</h3>
     <div class="youtube-container">
-      <div class="youtube-embed">
-        <iframe 
-          width="100%" 
-          height="100%" 
-          src="https://www.youtube.com/embed?listType=user_uploads&list=bryanfriedrichs3453" 
-          title="YouTube video player" 
-          frameborder="0" 
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
-          allowfullscreen>
-        </iframe>
-      </div>
       <div class="youtube-info">
-        <h4>Check out my animations and videos!</h4>
-        <p>Subscribe to my channel for paragliding adventures, animations, and creative projects.</p>
+        <h4>Personal YouTube Channel</h4>
+        <p>Mostly Alaskan Paragliding and Speedriding</p>
         <a href="https://www.youtube.com/@bryanfriedrichs3453" target="_blank" class="btn btn-primary">Visit Channel</a>
       </div>
     </div>
