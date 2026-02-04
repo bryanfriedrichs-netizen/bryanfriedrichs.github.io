@@ -112,7 +112,7 @@
 <body>
     <div class="game-container">
         <div class="header">
-            <h1>🐍 SNAKE SOO HUNGRY!! 🐭</h1>
+            <h1>ðŸ SNAKE SOO HUNGRY!! ðŸ­</h1>
             <div class="score-board">
                 <div class="score-item">
                     Score: <span class="score-value" id="score">0</span>
@@ -126,7 +126,7 @@
         <canvas id="gameCanvas" width="520" height="520"></canvas>
         
         <div class="controls">
-            Use arrow keys (↑ ↓ ← →) to control the snake
+            Use arrow keys (â†‘ â†“ â† â†’) to control the snake
         </div>
         
         <div class="game-over" id="gameOver">
@@ -157,6 +157,8 @@
         let gameLoop;
         let obstacles = [];
         let lastObstacleScore = 0;
+        let speedBoostApplied = false;
+        let baseGameSpeed = 120;
         
         highScoreElement.textContent = highScore;
         
@@ -183,10 +185,15 @@
         }
         
         function drawSnake() {
+            // Change color based on score
+            const headColor = score >= 50 ? '#f1c40f' : '#4ecca3';  // Yellow or green
+            const bodyColor1 = score >= 50 ? '#f39c12' : '#45b393';
+            const bodyColor2 = score >= 50 ? '#e67e22' : '#3a9d7d';
+            
             snake.forEach((segment, index) => {
                 if (index === 0) {
                     // Snake head
-                    ctx.fillStyle = '#4ecca3';
+                    ctx.fillStyle = headColor;
                     ctx.fillRect(
                         segment.x * gridSize + 1, 
                         segment.y * gridSize + 1, 
@@ -268,8 +275,8 @@
                         segment.x * gridSize + gridSize, 
                         segment.y * gridSize + gridSize
                     );
-                    gradient.addColorStop(0, '#45b393');
-                    gradient.addColorStop(1, '#3a9d7d');
+                    gradient.addColorStop(0, bodyColor1);
+                    gradient.addColorStop(1, bodyColor2);
                     ctx.fillStyle = gradient;
                     
                     ctx.fillRect(
@@ -295,14 +302,32 @@
         }
         
         function addObstacle() {
-            // Create a 2-square obstacle in random orientation (horizontal or vertical)
+            // Determine obstacle size: 2 squares for scores 0-19, 4 squares for 20+
+            const obstacleSize = score >= 20 ? 4 : 2;
             const isHorizontal = Math.random() < 0.5;
-            let x = Math.floor(Math.random() * (tileCount - (isHorizontal ? 2 : 1)));
-            let y = Math.floor(Math.random() * (tileCount - (isHorizontal ? 1 : 2)));
             
-            const newObstacle = isHorizontal 
-                ? [{ x: x, y: y }, { x: x + 1, y: y }]
-                : [{ x: x, y: y }, { x: x, y: y + 1 }];
+            let x, y, newObstacle;
+            
+            if (obstacleSize === 2) {
+                // Create a 2-square obstacle
+                x = Math.floor(Math.random() * (tileCount - (isHorizontal ? 2 : 1)));
+                y = Math.floor(Math.random() * (tileCount - (isHorizontal ? 1 : 2)));
+                
+                newObstacle = isHorizontal 
+                    ? [{ x: x, y: y }, { x: x + 1, y: y }]
+                    : [{ x: x, y: y }, { x: x, y: y + 1 }];
+            } else {
+                // Create a 4-square obstacle (2x2)
+                x = Math.floor(Math.random() * (tileCount - 2));
+                y = Math.floor(Math.random() * (tileCount - 2));
+                
+                newObstacle = [
+                    { x: x, y: y },
+                    { x: x + 1, y: y },
+                    { x: x, y: y + 1 },
+                    { x: x + 1, y: y + 1 }
+                ];
+            }
             
             // Make sure obstacle doesn't spawn on snake or mouse
             const isValid = !newObstacle.some(obs => 
@@ -367,6 +392,17 @@
             if (head.x === mouse.x && head.y === mouse.y) {
                 score++;
                 scoreElement.textContent = score;
+                
+                // Apply speed boost at score 50
+                if (score === 50 && !speedBoostApplied) {
+                    speedBoostApplied = true;
+                    baseGameSpeed = Math.floor(baseGameSpeed * 0.9); // 10% faster (lower interval)
+                    // Restart the game loop with new speed
+                    if (gameRunning) {
+                        clearInterval(gameLoop);
+                        gameLoop = setInterval(gameStep, baseGameSpeed);
+                    }
+                }
                 
                 // Add obstacle every 10 mice
                 if (score % 10 === 0 && score > lastObstacleScore) {
@@ -433,6 +469,8 @@
             score = 0;
             obstacles = [];
             lastObstacleScore = 0;
+            speedBoostApplied = false;
+            baseGameSpeed = 120;
             scoreElement.textContent = score;
             gameRunning = true;
             gameOverElement.style.display = 'none';
@@ -441,7 +479,7 @@
             draw();
             
             clearInterval(gameLoop);
-            gameLoop = setInterval(gameStep, 120);
+            gameLoop = setInterval(gameStep, baseGameSpeed);
         }
         
         function restartGame() {
