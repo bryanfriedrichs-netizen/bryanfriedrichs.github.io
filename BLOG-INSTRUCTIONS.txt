@@ -1,0 +1,161 @@
+================================================================================
+HOW TO UPDATE THE CHARACTER BLOG
+================================================================================
+
+Your blog reads posts from the "blog-posts.json" file. To add new posts, simply
+edit this JSON file. It's much easier than editing HTML!
+
+================================================================================
+ADDING A NEW POST
+================================================================================
+
+1. Open "blog-posts.json" in any text editor (Notepad works fine)
+
+2. Copy this template:
+
+    {
+      "title": "Your Post Title Here",
+      "date": "2026-02-03",
+      "content": "Your post content goes here.\n\nUse \\n\\n to create new paragraphs."
+    }
+
+3. Add it to the "posts" array (after the opening [ bracket)
+
+4. Make sure to add a COMMA after the previous post
+
+5. Save the file
+
+
+================================================================================
+EXAMPLE: Adding a new post to the top
+================================================================================
+
+BEFORE:
+{
+  "posts": [
+    {
+      "title": "First Entry",
+      "date": "2026-02-03",
+      "content": "This is my first entry."
+    }
+  ]
+}
+
+AFTER:
+{
+  "posts": [
+    {
+      "title": "My New Post",
+      "date": "2026-02-04",
+      "content": "This is my newest post.\n\nIt has multiple paragraphs."
+    },
+    {
+      "title": "First Entry",
+      "date": "2026-02-03",
+      "content": "This is my first entry."
+    }
+  ]
+}
+
+Notice: Comma after the new post's closing }, before the next post!
+
+
+================================================================================
+ADDING MEDIA (IMAGES, AUDIO, VIDEO)
+================================================================================
+
+To add an image to a post:
+
+{
+  "title": "Post with Image",
+  "date": "2026-02-04",
+  "content": "Look at this image below!",
+  "media": {
+    "type": "image",
+    "url": "images/photo.jpg",
+    "caption": "Optional caption"
+  }
+}
+
+For audio:
+  "media": {
+    "type": "audio",
+    "url": "audio/recording.mp3"
+  }
+
+For video:
+  "media": {
+    "type": "video",
+    "url": "videos/clip.mp4"
+  }
+
+Note: Put your media files in folders (images/, audio/, videos/) in the same
+directory as your blog HTML file.
+
+
+================================================================================
+DATE FORMAT
+================================================================================
+
+Always use: "YYYY-MM-DD" format
+Examples:
+  - "2026-02-03"
+  - "2026-12-25"
+  - "2025-01-01"
+
+The blog will automatically display it as "February 3, 2026"
+
+
+================================================================================
+FORMATTING TEXT
+================================================================================
+
+- New paragraphs: Use \n\n between paragraphs
+- Single line break: Use \n
+- Quotes: Use \" inside your text (e.g., "He said \"hello\"")
+- Em dash: Just type — or --
+
+
+================================================================================
+COMMON MISTAKES
+================================================================================
+
+❌ Forgetting commas between posts
+❌ Using wrong date format (use YYYY-MM-DD)
+❌ Forgetting to close brackets } and ]
+❌ Using single quotes instead of double quotes
+
+✓ Use a JSON validator if you're not sure: jsonlint.com
+
+
+================================================================================
+PUSHING UPDATES TO GITHUB
+================================================================================
+
+After editing blog-posts.json:
+
+1. Open Command Prompt
+2. Run:
+   cd C:\Projects\website
+   git add blog-posts.json
+   git commit -m "Add new blog post"
+   git push
+
+
+================================================================================
+TROUBLESHOOTING
+================================================================================
+
+If the blog shows "Unable to load entries":
+  - Check that blog-posts.json is in the same folder as character-blog.html
+  - Validate your JSON at jsonlint.com
+  - Check for missing commas or brackets
+  - Make sure all quotes are double quotes (")
+
+If posts don't appear:
+  - Check the browser console (F12) for errors
+  - Verify the date format is YYYY-MM-DD
+  - Make sure "posts": [ ] array has content
+
+
+================================================================================

@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Character Journal</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Georgia', 'Times New Roman', serif;
+      background: #ffffff;
+      color: #1a1a1a;
+      line-height: 1.8;
+      padding: 2rem 1rem;
+    }
+
+    .container {
+      max-width: 700px;
+      margin: 0 auto;
+    }
+
+    header {
+      text-align: center;
+      padding: 3rem 0 4rem 0;
+      border-bottom: 1px solid #e0e0e0;
+      margin-bottom: 3rem;
+    }
+
+    header h1 {
+      font-size: 2.5rem;
+      font-weight: 400;
+      margin-bottom: 0.5rem;
+      letter-spacing: -0.5px;
+    }
+
+    header .subtitle {
+      color: #666;
+      font-size: 1rem;
+      font-style: italic;
+    }
+
+    .post {
+      margin-bottom: 4rem;
+      padding-bottom: 3rem;
+      border-bottom: 1px solid #f0f0f0;
+    }
+
+    .post:last-child {
+      border-bottom: none;
+    }
+
+    .post-header {
+      margin-bottom: 1.5rem;
+    }
+
+    .post-title {
+      font-size: 1.75rem;
+      font-weight: 400;
+      margin-bottom: 0.5rem;
+      color: #1a1a1a;
+    }
+
+    .post-date {
+      color: #999;
+      font-size: 0.9rem;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+
+    .post-content {
+      font-size: 1.1rem;
+      color: #2a2a2a;
+      white-space: pre-wrap;
+    }
+
+    .post-content p {
+      margin-bottom: 1.2rem;
+    }
+
+    .post-media {
+      margin: 2rem 0;
+    }
+
+    .post-media img {
+      max-width: 100%;
+      height: auto;
+      border-radius: 2px;
+    }
+
+    .post-media audio,
+    .post-media video {
+      width: 100%;
+      margin: 1rem 0;
+    }
+
+    .loading {
+      text-align: center;
+      color: #999;
+      padding: 4rem 0;
+      font-style: italic;
+    }
+
+    .error {
+      text-align: center;
+      color: #666;
+      padding: 4rem 0;
+    }
+
+    footer {
+      text-align: center;
+      padding: 3rem 0 2rem 0;
+      color: #999;
+      font-size: 0.9rem;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+
+    .back-link {
+      text-align: center;
+      margin-top: 3rem;
+      padding-top: 2rem;
+      border-top: 1px solid #e0e0e0;
+    }
+
+    .back-link a {
+      color: #666;
+      text-decoration: none;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 0.95rem;
+      transition: color 0.3s;
+    }
+
+    .back-link a:hover {
+      color: #1a1a1a;
+    }
+
+    @media (max-width: 600px) {
+      body {
+        padding: 1rem 0.75rem;
+      }
+
+      header h1 {
+        font-size: 2rem;
+      }
+
+      .post-title {
+        font-size: 1.5rem;
+      }
+
+      .post-content {
+        font-size: 1rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Character Journal</h1>
+      <p class="subtitle">A collection of thoughts and musings</p>
+    </header>
+
+    <div id="posts-container">
+      <div class="loading">Loading entries...</div>
+    </div>
+
+    <div class="back-link">
+      <a href="index.html">← Back to main site</a>
+    </div>
+
+    <footer>
+      <p>Character Journal • 2026</p>
+    </footer>
+  </div>
+
+  <script>
+    async function loadPosts() {
+      const container = document.getElementById('posts-container');
+      
+      try {
+        const response = await fetch('blog-posts.json');
+        
+        if (!response.ok) {
+          throw new Error('Could not load posts');
+        }
+        
+        const data = await response.json();
+        const posts = data.posts;
+        
+        if (posts.length === 0) {
+          container.innerHTML = '<div class="error">No entries yet. Check back soon!</div>';
+          return;
+        }
+        
+        // Sort posts by date (newest first)
+        posts.sort((a, b) => new Date(b.date) - new Date(a.date));
+        
+        container.innerHTML = '';
+        
+        posts.forEach(post => {
+          const postElement = document.createElement('article');
+          postElement.className = 'post';
+          
+          const formattedDate = new Date(post.date).toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+          });
+          
+          let mediaHTML = '';
+          if (post.media) {
+            if (post.media.type === 'image') {
+              mediaHTML = `<div class="post-media"><img src="${post.media.url}" alt="${post.media.caption || ''}"></div>`;
+            } else if (post.media.type === 'audio') {
+              mediaHTML = `<div class="post-media"><audio controls><source src="${post.media.url}"></audio></div>`;
+            } else if (post.media.type === 'video') {
+              mediaHTML = `<div class="post-media"><video controls><source src="${post.media.url}"></video></div>`;
+            }
+          }
+          
+          postElement.innerHTML = `
+            <div class="post-header">
+              <h2 class="post-title">${post.title}</h2>
+              <div class="post-date">${formattedDate}</div>
+            </div>
+            ${mediaHTML}
+            <div class="post-content">${post.content}</div>
+          `;
+          
+          container.appendChild(postElement);
+        });
+        
+      } catch (error) {
+        container.innerHTML = '<div class="error">Unable to load entries. Please check that blog-posts.json exists.</div>';
+      }
+    }
+    
+    // Load posts when page loads
+    document.addEventListener('DOMContentLoaded', loadPosts);
+  </script>
+</body>
+</html>

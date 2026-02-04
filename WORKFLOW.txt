@@ -1,0 +1,115 @@
+================================================================================
+WEBSITE UPDATE WORKFLOW
+================================================================================
+
+Every time you want to make a change to your website, follow these steps:
+
+================================================================================
+STEP 1: EDIT YOUR FILES
+================================================================================
+
+1. Navigate to: C:\Projects\website
+
+2. Open the file you want to edit (e.g., index.html) in your text editor
+
+3. Make your changes
+
+4. Save the file
+
+
+================================================================================
+STEP 2: PUSH CHANGES TO GITHUB
+================================================================================
+
+1. Open Command Prompt (Windows Key + R, type "cmd", press Enter)
+
+2. Run these commands one at a time:
+
+   cd C:\Projects\website
+
+   git add .
+
+   git commit -m "Brief description of what you changed"
+
+   git push
+
+
+3. Done! Your changes are now live on GitHub.
+
+
+================================================================================
+HELPFUL COMMANDS
+================================================================================
+
+See what files have changed:
+   git status
+
+Add only specific files:
+   git add index.html
+   git add snake-game.html
+
+View recent commit history:
+   git log --oneline -5
+
+Undo changes before committing (restore original):
+   git restore index.html
+
+
+================================================================================
+COMMIT MESSAGE EXAMPLES
+================================================================================
+
+Good commit messages are short and descriptive:
+   - "Add contact form"
+   - "Update snake game description"
+   - "Fix navigation bar styling"
+   - "Change background color to dark grey"
+   - "Add new photo gallery section"
+
+
+================================================================================
+TROUBLESHOOTING
+================================================================================
+
+If git push asks for authentication:
+   - Choose "Sign in with browser"
+   - Authorize in your web browser
+   - Return to Command Prompt
+
+If you get "nothing to commit, working tree clean":
+   - You haven't made any changes since your last commit
+   - Or the file wasn't saved properly
+
+If you're not sure what changed:
+   - Run: git status
+   - Run: git diff index.html
+
+
+================================================================================
+YOUR GITHUB REPOSITORY
+================================================================================
+
+Repository URL:
+   https://github.com/bryanfriedrichs-netizen/bryanfriedrichs.github.io
+
+Your Git Config:
+   Name: Bryan Friedrichs
+   Email: [your configured email]
+
+
+================================================================================
+REMEMBER
+================================================================================
+
+✓ Always work directly in C:\Projects\website
+✓ Save your files before running git commands
+✓ Use clear commit messages
+✓ git add . adds ALL changed files
+✓ You only need to authenticate once per computer
+
+✗ Don't save to Desktop and copy over
+✗ Don't forget to commit before pushing
+✗ Don't use vague commit messages like "update" or "changes"
+
+
+================================================================================
