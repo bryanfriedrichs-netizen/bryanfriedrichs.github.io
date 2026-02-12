@@ -1,0 +1,970 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Flight Poster Studio</title>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:ital,wght@0,400;0,500;0,700&family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=JetBrains+Mono:wght@400;600&family=Oswald:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0c0c0f;
+      --surface: #16161a;
+      --surface2: #1e1e24;
+      --border: #2a2a32;
+      --text: #e8e8ec;
+      --text-dim: #7a7a86;
+      --accent: #e85d3a;
+      --accent-glow: rgba(232, 93, 58, 0.15);
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'DM Sans', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+    .site-header {
+      padding: 1.25rem 2rem;
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .logo {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 1.5rem; letter-spacing: 2px;
+      color: var(--text); display: flex; align-items: center; gap: 0.75rem;
+    }
+    .logo-icon {
+      width: 30px; height: 30px; background: var(--accent);
+      border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 14px;
+    }
+    .header-tag {
+      font-size: 0.7rem; color: var(--text-dim); background: var(--surface2);
+      padding: 0.25rem 0.65rem; border-radius: 20px; letter-spacing: 1px; text-transform: uppercase;
+    }
+
+    /* Upload */
+    .upload-zone {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      min-height: calc(100vh - 60px); padding: 2rem;
+    }
+    .upload-box {
+      border: 2px dashed var(--border); border-radius: 16px;
+      padding: 4rem 5rem; text-align: center; cursor: pointer;
+      transition: all 0.3s; max-width: 560px; width: 100%;
+      position: relative; overflow: hidden;
+    }
+    .upload-box::before {
+      content: ''; position: absolute; inset: 0;
+      background: radial-gradient(ellipse at center, var(--accent-glow) 0%, transparent 70%);
+      opacity: 0; transition: opacity 0.3s;
+    }
+    .upload-box:hover { border-color: var(--accent); }
+    .upload-box:hover::before { opacity: 1; }
+    .upload-box.dragging { border-color: var(--accent); background: var(--accent-glow); }
+    .upload-icon { font-size: 3.5rem; margin-bottom: 1.5rem; display: block; position: relative; z-index: 1; }
+    .upload-title {
+      font-family: 'Oswald', sans-serif; font-size: 1.4rem; font-weight: 500;
+      margin-bottom: 0.5rem; letter-spacing: 1px; position: relative; z-index: 1;
+    }
+    .upload-sub { color: var(--text-dim); font-size: 0.9rem; position: relative; z-index: 1; }
+    .upload-sub span { color: var(--accent); text-decoration: underline; cursor: pointer; }
+    #fileInput { display: none; }
+
+    /* Studio layout */
+    .studio { display: none; height: calc(100vh - 60px); }
+    .studio.active { display: flex; }
+
+    /* Left panel */
+    .panel {
+      width: 320px; min-width: 320px;
+      background: var(--surface); border-right: 1px solid var(--border);
+      display: flex; flex-direction: column;
+      overflow-y: auto;
+    }
+    .panel-section {
+      padding: 1.25rem 1.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .panel-section-title {
+      font-family: 'Oswald', sans-serif; font-size: 0.75rem;
+      letter-spacing: 1.5px; text-transform: uppercase;
+      color: var(--text-dim); margin-bottom: 0.85rem;
+    }
+    .field { margin-bottom: 1rem; }
+    .field:last-child { margin-bottom: 0; }
+    .field label {
+      display: block; font-size: 0.8rem; color: var(--text-dim);
+      margin-bottom: 0.35rem; font-weight: 500;
+    }
+    .field input, .field textarea, .field select {
+      width: 100%; padding: 0.55rem 0.75rem;
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 8px; color: var(--text);
+      font-family: 'DM Sans', sans-serif; font-size: 0.85rem;
+      transition: border-color 0.2s;
+    }
+    .field input:focus, .field textarea:focus, .field select:focus {
+      outline: none; border-color: var(--accent);
+    }
+    .field textarea {
+      min-height: 70px; resize: vertical; line-height: 1.5;
+    }
+    .toggle-row {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 0.85rem;
+    }
+    .toggle-row label {
+      font-size: 0.85rem; color: var(--text); margin-bottom: 0; font-weight: 500;
+    }
+    .toggle {
+      width: 40px; height: 22px; border-radius: 12px;
+      background: var(--border); position: relative;
+      cursor: pointer; transition: background 0.2s;
+    }
+    .toggle.on { background: var(--accent); }
+    .toggle::after {
+      content: ''; position: absolute;
+      top: 3px; left: 3px; width: 16px; height: 16px;
+      border-radius: 50%; background: white;
+      transition: transform 0.2s;
+    }
+    .toggle.on::after { transform: translateX(18px); }
+
+    /* Design chips */
+    .design-chips { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+    .design-chip {
+      padding: 0.45rem 0.85rem; border-radius: 8px;
+      border: 1px solid var(--border); background: transparent;
+      color: var(--text-dim); cursor: pointer;
+      font-family: 'DM Sans', sans-serif; font-size: 0.78rem; font-weight: 500;
+      transition: all 0.2s; text-align: left; line-height: 1.3;
+    }
+    .design-chip:hover { border-color: var(--text-dim); color: var(--text); }
+    .design-chip.active { background: var(--accent); border-color: var(--accent); color: white; }
+    .design-chip .chip-sub { display: block; font-size: 0.65rem; opacity: 0.6; }
+
+    /* Stat pills in panel */
+    .stat-row {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 0.3rem 0; font-size: 0.82rem;
+    }
+    .stat-row .s-label { color: var(--text-dim); }
+    .stat-row .s-value { font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 0.8rem; }
+
+    /* Right: canvas area */
+    .canvas-area {
+      flex: 1; display: flex; align-items: center; justify-content: center;
+      background: var(--bg); position: relative; overflow: hidden;
+    }
+    .canvas-area::before {
+      content: ''; position: absolute; inset: 0;
+      background-image: radial-gradient(circle at 1px 1px, var(--border) 1px, transparent 0);
+      background-size: 24px 24px; opacity: 0.25;
+    }
+    .poster-frame {
+      position: relative; z-index: 1;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.3), 0 20px 60px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.05);
+      border-radius: 4px; overflow: hidden;
+    }
+    #posterCanvas { display: block; max-height: calc(100vh - 130px); max-width: calc(100vw - 380px); height: auto; width: auto; }
+
+    /* Download bar */
+    .download-bar {
+      position: fixed; bottom: 1.25rem; right: 1.25rem;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 12px; padding: 0.65rem 1rem;
+      display: none; align-items: center; gap: 0.65rem;
+      z-index: 50; box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    }
+    .download-bar.active { display: flex; }
+    .size-select {
+      background: var(--surface2); border: 1px solid var(--border);
+      color: var(--text); padding: 0.45rem 0.65rem; border-radius: 8px;
+      font-family: 'DM Sans', sans-serif; font-size: 0.82rem; cursor: pointer;
+    }
+    .download-btn {
+      background: var(--accent); color: white; border: none;
+      padding: 0.55rem 1.25rem; border-radius: 8px;
+      font-family: 'DM Sans', sans-serif; font-size: 0.85rem; font-weight: 600;
+      cursor: pointer; transition: all 0.2s; display: flex; align-items: center; gap: 0.4rem;
+    }
+    .download-btn:hover { filter: brightness(1.1); transform: translateY(-1px); }
+    .new-file-btn {
+      background: var(--surface2); border: 1px solid var(--border);
+      color: var(--text-dim); padding: 0.45rem 0.85rem; border-radius: 8px;
+      cursor: pointer; font-family: 'DM Sans', sans-serif; font-size: 0.82rem;
+      transition: all 0.2s;
+    }
+    .new-file-btn:hover { border-color: var(--accent); color: var(--text); }
+
+    /* Loading */
+    .loading-overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(12, 12, 15, 0.92); z-index: 100;
+      align-items: center; justify-content: center; flex-direction: column; gap: 1.5rem;
+    }
+    .loading-overlay.active { display: flex; }
+    .spinner {
+      width: 40px; height: 40px; border: 3px solid var(--border);
+      border-top-color: var(--accent); border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading-text { font-family: 'Oswald', sans-serif; font-size: 1.1rem; letter-spacing: 2px; color: var(--text-dim); }
+    .loading-progress { color: var(--text-dim); font-size: 0.85rem; font-family: 'JetBrains Mono', monospace; }
+
+    @media (max-width: 900px) {
+      .studio.active { flex-direction: column; }
+      .panel { width: 100%; min-width: unset; max-height: 45vh; border-right: none; border-bottom: 1px solid var(--border); }
+      #posterCanvas { max-width: calc(100vw - 32px); max-height: 50vh; }
+      .download-bar { right: 50%; transform: translateX(50%); }
+    }
+  </style>
+</head>
+<body>
+
+<header class="site-header">
+  <div class="logo"><div class="logo-icon">&#9650;</div> FLIGHT POSTER STUDIO</div>
+  <div class="header-tag">Beta</div>
+</header>
+
+<div class="upload-zone" id="uploadZone">
+  <div class="upload-box" id="uploadBox">
+    <span class="upload-icon">&#9650;</span>
+    <div class="upload-title">DROP YOUR IGC FILE HERE</div>
+    <div class="upload-sub">or <span id="browseLink">browse files</span> to upload</div>
+  </div>
+  <input type="file" id="fileInput" accept=".igc">
+</div>
+
+<div class="studio" id="studio">
+  <!-- Left panel -->
+  <div class="panel">
+    <!-- Design -->
+    <div class="panel-section">
+      <div class="panel-section-title">Design</div>
+      <div class="design-chips" id="designChips"></div>
+    </div>
+
+    <!-- Text: Top -->
+    <div class="panel-section">
+      <div class="panel-section-title">Top Text</div>
+      <div class="field">
+        <label>Title</label>
+        <input type="text" id="titleText" placeholder="e.g. June 14, 2024">
+      </div>
+      <div class="field">
+        <label>Subtitle</label>
+        <input type="text" id="subtitleText" placeholder="e.g. Hatcher Pass, Alaska">
+      </div>
+    </div>
+
+    <!-- Text: Bottom -->
+    <div class="panel-section">
+      <div class="panel-section-title">Bottom Text</div>
+      <div class="toggle-row">
+        <label>Show custom text</label>
+        <div class="toggle" id="bottomToggle"></div>
+      </div>
+      <div id="bottomTextFields" style="display:none;">
+        <div class="field">
+          <label>Heading</label>
+          <input type="text" id="bottomHeading" placeholder="e.g. My Best Flight">
+        </div>
+        <div class="field">
+          <label>Body text</label>
+          <textarea id="bottomBody" placeholder="Add a personal note, story, or dedication..."></textarea>
+        </div>
+      </div>
+    </div>
+
+    <!-- Flight stats -->
+    <div class="panel-section">
+      <div class="panel-section-title">Flight Data</div>
+      <div id="statsPanel"></div>
+    </div>
+
+    <!-- Actions -->
+    <div class="panel-section" style="border-bottom:none;">
+      <button class="new-file-btn" id="newFileBtn" style="width:100%;text-align:center;">+ Upload New File</button>
+    </div>
+  </div>
+
+  <!-- Canvas -->
+  <div class="canvas-area">
+    <div class="poster-frame">
+      <canvas id="posterCanvas"></canvas>
+    </div>
+  </div>
+
+  <!-- Download -->
+  <div class="download-bar" id="downloadBar">
+    <select class="size-select" id="sizeSelect">
+      <option value="poster-24x36">24 × 36″</option>
+      <option value="poster-18x24" selected>18 × 24″</option>
+      <option value="poster-11x17">11 × 17″</option>
+      <option value="square-12x12">12 × 12″</option>
+      <option value="tshirt">T-Shirt</option>
+    </select>
+    <button class="download-btn" id="downloadBtn">&#11015; Download PNG</button>
+  </div>
+</div>
+
+<div class="loading-overlay" id="loading">
+  <div class="spinner"></div>
+  <div class="loading-text">GENERATING POSTER</div>
+  <div class="loading-progress" id="loadingProgress">Loading map tiles...</div>
+</div>
+
+<script>
+// ============================================================
+// IGC PARSER
+// ============================================================
+function parseIGC(content) {
+  const lines = content.split('\n');
+  const points = [];
+  let pilotName = '', gliderType = '', date = '';
+  for (const line of lines) {
+    if (line.startsWith('HFPLT') || line.startsWith('HOPLT'))
+      pilotName = line.split(':').slice(1).join(':').trim();
+    if (line.startsWith('HFGTY') || line.startsWith('HOGTY'))
+      gliderType = line.split(':').slice(1).join(':').trim();
+    if (line.startsWith('HFDTE') || line.startsWith('HODTE')) {
+      const d = line.replace(/HFDTE|HODTE|DATE:?/gi, '').trim();
+      if (d.length >= 6) {
+        const day = d.substring(0, 2), month = d.substring(2, 4), year = d.substring(4, 6);
+        date = `${parseInt(year) > 80 ? '19' : '20'}${year}-${month}-${day}`;
+      }
+    }
+    if (line.startsWith('B') && line.length >= 35) {
+      const timeH = parseInt(line.substring(1, 3)), timeM = parseInt(line.substring(3, 5)), timeS = parseInt(line.substring(5, 7));
+      const latDeg = parseFloat(line.substring(7, 9)), latMin = parseFloat(line.substring(9, 14)) / 1000;
+      const latSign = line[14] === 'N' ? 1 : -1;
+      const lonDeg = parseFloat(line.substring(15, 18)), lonMin = parseFloat(line.substring(18, 23)) / 1000;
+      const lonSign = line[23] === 'E' ? 1 : -1;
+      const pressAlt = parseInt(line.substring(25, 30)), gpsAlt = parseInt(line.substring(30, 35));
+      const lat = (latDeg + latMin / 60) * latSign, lon = (lonDeg + lonMin / 60) * lonSign;
+      const alt = gpsAlt > 0 ? gpsAlt : pressAlt, time = timeH * 3600 + timeM * 60 + timeS;
+      if (!isNaN(lat) && !isNaN(lon) && !isNaN(alt)) points.push({ lat, lon, alt, time });
+    }
+  }
+  return { points, pilotName, gliderType, date };
+}
+
+// ============================================================
+// FLIGHT STATS
+// ============================================================
+function haversine(lat1, lon1, lat2, lon2) {
+  const R = 6371, dLat = (lat2 - lat1) * Math.PI / 180, dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+function computeStats(points) {
+  let totalDist = 0, maxAlt = -Infinity, minAlt = Infinity, maxSpeed = 0, totalClimb = 0, totalDescent = 0;
+  const bounds = { minLat: Infinity, maxLat: -Infinity, minLon: Infinity, maxLon: -Infinity };
+  for (let i = 0; i < points.length; i++) {
+    const p = points[i];
+    bounds.minLat = Math.min(bounds.minLat, p.lat); bounds.maxLat = Math.max(bounds.maxLat, p.lat);
+    bounds.minLon = Math.min(bounds.minLon, p.lon); bounds.maxLon = Math.max(bounds.maxLon, p.lon);
+    maxAlt = Math.max(maxAlt, p.alt); minAlt = Math.min(minAlt, p.alt);
+    if (i > 0) {
+      const prev = points[i - 1], d = haversine(prev.lat, prev.lon, p.lat, p.lon);
+      totalDist += d;
+      const dt = p.time - prev.time;
+      if (dt > 0 && dt < 30) { const speed = (d / dt) * 3600; if (speed < 200) maxSpeed = Math.max(maxSpeed, speed); }
+      const altDiff = p.alt - prev.alt;
+      if (altDiff > 0) totalClimb += altDiff; else totalDescent += Math.abs(altDiff);
+    }
+  }
+  const duration = points.length > 1 ? points[points.length - 1].time - points[0].time : 0;
+  return { totalDist, maxAlt, minAlt, maxSpeed, totalClimb, totalDescent,
+    durationH: Math.floor(duration / 3600), durationM: Math.floor((duration % 3600) / 60), duration, bounds };
+}
+
+// ============================================================
+// MAP TILE SYSTEM
+// ============================================================
+const TILE_SOURCES = {
+  satellite: (z, x, y) => `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`,
+  topo: (z, x, y) => `https://tile.opentopomap.org/${z}/${x}/${y}.png`,
+};
+function latLonToTile(lat, lon, zoom) {
+  const n = Math.pow(2, zoom), x = Math.floor(n * ((lon + 180) / 360));
+  const latRad = lat * Math.PI / 180;
+  const y = Math.floor(n * (1 - (Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI)) / 2);
+  return { x: Math.max(0, Math.min(n - 1, x)), y: Math.max(0, Math.min(n - 1, y)) };
+}
+function tileToLatLon(x, y, z) {
+  const n = Math.pow(2, z);
+  return { lat: Math.atan(Math.sinh(Math.PI * (1 - 2 * y / n))) * 180 / Math.PI, lon: (x / n) * 360 - 180 };
+}
+function calcTileZoom(bounds, canvasW, canvasH) {
+  for (let z = 15; z >= 4; z--) {
+    const tl = latLonToTile(bounds.maxLat, bounds.minLon, z), br = latLonToTile(bounds.minLat, bounds.maxLon, z);
+    const tilesX = br.x - tl.x + 1, tilesY = br.y - tl.y + 1;
+    if (tilesX * tilesY <= 200 && tilesX * 256 >= canvasW * 0.3) return z;
+  }
+  return 10;
+}
+function loadMapRegion(bounds, canvasW, canvasH, source, bufferFactor) {
+  const buf = bufferFactor || 0.3, latR = bounds.maxLat - bounds.minLat, lonR = bounds.maxLon - bounds.minLon;
+  const eb = { minLat: bounds.minLat - latR * buf, maxLat: bounds.maxLat + latR * buf, minLon: bounds.minLon - lonR * buf, maxLon: bounds.maxLon + lonR * buf };
+  const zoom = calcTileZoom(eb, canvasW, canvasH);
+  const tl = latLonToTile(eb.maxLat, eb.minLon, zoom), br = latLonToTile(eb.minLat, eb.maxLon, zoom);
+  const tilesX = br.x - tl.x + 1, tilesY = br.y - tl.y + 1, total = tilesX * tilesY;
+  const urlFn = TILE_SOURCES[source] || TILE_SOURCES.satellite;
+  const prog = document.getElementById('loadingProgress');
+  return new Promise(resolve => {
+    const mc = document.createElement('canvas'); mc.width = tilesX * 256; mc.height = tilesY * 256;
+    const mctx = mc.getContext('2d'); let loaded = 0;
+    function check() {
+      if (loaded >= total) {
+        const t = tileToLatLon(tl.x, tl.y, zoom), b = tileToLatLon(br.x + 1, br.y + 1, zoom);
+        resolve({ canvas: mc, bounds: { minLat: b.lat, maxLat: t.lat, minLon: t.lon, maxLon: b.lon }, zoom });
+      }
+    }
+    for (let tx = tl.x; tx <= br.x; tx++) for (let ty = tl.y; ty <= br.y; ty++) {
+      const img = new Image(); img.crossOrigin = 'anonymous';
+      const lx = tx - tl.x, ly = ty - tl.y;
+      img.onload = () => { mctx.drawImage(img, lx * 256, ly * 256, 256, 256); loaded++; if (prog) prog.textContent = `Loading tiles... ${loaded}/${total}`; check(); };
+      img.onerror = () => { mctx.fillStyle = '#2a3a2a'; mctx.fillRect(lx * 256, ly * 256, 256, 256); loaded++; check(); };
+      img.src = urlFn(zoom, tx, ty);
+    }
+    if (total === 0) resolve({ canvas: mc, bounds: eb, zoom: 10 });
+  });
+}
+function drawMapToCanvas(ctx, mapData, tx, ty, tw, th, fb, buf) {
+  const latR = fb.maxLat - fb.minLat, lonR = fb.maxLon - fb.minLon;
+  const vb = { minLat: fb.minLat - latR * buf, maxLat: fb.maxLat + latR * buf, minLon: fb.minLon - lonR * buf, maxLon: fb.maxLon + lonR * buf };
+  const mb = mapData.bounds, mw = mapData.canvas.width, mh = mapData.canvas.height;
+
+  // Compute source rect in tile-canvas pixel space (already Mercator-projected)
+  let sx = ((vb.minLon - mb.minLon) / (mb.maxLon - mb.minLon)) * mw;
+  let sy = ((mb.maxLat - vb.maxLat) / (mb.maxLat - mb.minLat)) * mh;
+  let sw = ((vb.maxLon - vb.minLon) / (mb.maxLon - mb.minLon)) * mw;
+  let sh = ((vb.maxLat - vb.minLat) / (mb.maxLat - mb.minLat)) * mh;
+
+  // Cover-mode: adjust source crop to match target aspect ratio (no stretching)
+  const srcAspect = sw / sh;
+  const tgtAspect = tw / th;
+  if (srcAspect > tgtAspect) {
+    // Source wider than target — crop sides
+    const newSw = sh * tgtAspect;
+    sx += (sw - newSw) / 2;
+    sw = newSw;
+  } else {
+    // Source taller than target — crop top/bottom
+    const newSh = sw / tgtAspect;
+    sy += (sh - newSh) / 2;
+    sh = newSh;
+  }
+
+  ctx.drawImage(mapData.canvas, sx, sy, sw, sh, tx, ty, tw, th);
+}
+
+// ============================================================
+// STATE
+// ============================================================
+const DESIGNS = [
+  { id: 'summit', name: 'Summit', sub: 'Satellite · Dramatic', mapSource: 'satellite' },
+  { id: 'cartograph', name: 'Cartograph', sub: 'Topo · Vintage', mapSource: 'topo' },
+  { id: 'whiteout', name: 'Whiteout', sub: 'Minimal · No Map', mapSource: null },
+  { id: 'neon', name: 'Neon Ridge', sub: 'Satellite · Glow', mapSource: 'satellite' },
+  { id: 'topo', name: 'Topo Art', sub: 'Topo · Blue Tint', mapSource: 'topo' },
+];
+const SIZES = {
+  'poster-24x36': { w: 2400, h: 3600 }, 'poster-18x24': { w: 1800, h: 2400 },
+  'poster-11x17': { w: 1100, h: 1700 }, 'square-12x12': { w: 1800, h: 1800 }, 'tshirt': { w: 1500, h: 1800 },
+};
+let flightData = null, flightStats = null, currentDesign = 'summit', currentSize = 'poster-18x24', mapCache = {};
+let userText = { title: '', subtitle: '', showBottom: false, bottomHeading: '', bottomBody: '' };
+
+// ============================================================
+// SHARED DRAWING HELPERS
+// ============================================================
+function projectPoints(points, bounds, x, y, w, h, padding) {
+  const px = padding || 0, latR = bounds.maxLat - bounds.minLat || 0.001, lonR = bounds.maxLon - bounds.minLon || 0.001;
+  const fa = lonR / latR, ba = (w - 2 * px) / (h - 2 * px);
+  let scale, ox, oy;
+  if (fa > ba) { scale = (w - 2 * px) / lonR; ox = x + px; oy = y + px + ((h - 2 * px) - latR * scale) / 2; }
+  else { scale = (h - 2 * px) / latR; ox = x + px + ((w - 2 * px) - lonR * scale) / 2; oy = y + px; }
+  return points.map(p => ({ x: ox + (p.lon - bounds.minLon) * scale, y: oy + (bounds.maxLat - p.lat) * scale, alt: p.alt, time: p.time }));
+}
+function altColor(t, s) {
+  if (s === 'warm') return `rgb(${Math.round(80+t*175)},${Math.round(40+t*80)},${Math.round(20+(1-t)*40)})`;
+  if (s === 'cool') return `rgb(${Math.round(40+t*60)},${Math.round(120+t*100)},${Math.round(180+t*75)})`;
+  if (s === 'neon') return `rgb(${Math.round(t*255)},${Math.round(255-t*150)},${Math.round(50+(1-t)*200)})`;
+  if (s === 'ink') { const v = Math.round(30+t*50); return `rgb(${v},${v+10},${v+20})`; }
+  return `hsl(${200+t*160},70%,${45+t*20}%)`;
+}
+function drawMarker(ctx, x, y, r, c) {
+  ctx.fillStyle = c; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = 'white'; ctx.beginPath(); ctx.arc(x, y, r * 0.45, 0, Math.PI * 2); ctx.fill();
+}
+function drawAltProfile(ctx, proj, stats, x, y, w, h, scheme, bg) {
+  const ar = stats.maxAlt - stats.minAlt || 1;
+  ctx.fillStyle = bg; ctx.fillRect(x, y, w, h);
+  ctx.beginPath(); ctx.moveTo(x, y + h);
+  for (let i = 0; i < proj.length; i++) { const px = x + (i / (proj.length - 1)) * w; ctx.lineTo(px, y + h - ((proj[i].alt - stats.minAlt) / ar) * h); }
+  ctx.lineTo(x + w, y + h); ctx.closePath();
+  ctx.fillStyle = scheme==='neon'?'rgba(0,255,150,0.1)':scheme==='cool'?'rgba(100,180,255,0.12)':scheme==='ink'?'rgba(80,70,60,0.12)':'rgba(232,93,58,0.12)'; ctx.fill();
+  ctx.beginPath();
+  for (let i = 0; i < proj.length; i++) { const px = x + (i / (proj.length - 1)) * w, t = (proj[i].alt - stats.minAlt) / ar; if (i===0) ctx.moveTo(px, y+h-t*h); else ctx.lineTo(px, y+h-t*h); }
+  ctx.strokeStyle = scheme==='neon'?'rgba(0,255,150,0.6)':scheme==='cool'?'rgba(100,180,255,0.6)':scheme==='ink'?'rgba(80,70,60,0.5)':'rgba(232,93,58,0.6)';
+  ctx.lineWidth = 1.5; ctx.stroke();
+  const lc = scheme==='neon'?'rgba(255,255,255,0.35)':scheme==='cool'?'rgba(100,100,100,0.6)':scheme==='ink'?'rgba(139,119,90,0.7)':scheme==='warm'?'rgba(255,255,255,0.4)':'rgba(200,220,240,0.45)';
+  const fs = Math.max(9, w * 0.012);
+  ctx.fillStyle = lc; ctx.font = `${fs}px 'JetBrains Mono', monospace`;
+  ctx.textAlign = 'left'; ctx.fillText(`${stats.minAlt}m`, x + 4, y + h - 3);
+  ctx.textAlign = 'right'; ctx.fillText(`${stats.maxAlt}m`, x + w - 4, y + fs + 2);
+}
+function drawStatsBar(ctx, W, y, h, stats, data, theme) {
+  const dk = theme==='dark'||theme==='neon'||theme==='topo';
+  ctx.strokeStyle = dk?'rgba(255,255,255,0.1)':'rgba(0,0,0,0.08)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(W*0.08, y); ctx.lineTo(W*0.92, y); ctx.stroke();
+  const items = [
+    { l:'DISTANCE', v: stats.totalDist.toFixed(1)+' km' }, { l:'MAX ALT', v: stats.maxAlt+' m' },
+    { l:'CLIMB', v: stats.totalClimb+' m' }, { l:'MAX SPEED', v: stats.maxSpeed.toFixed(0)+' km/h' },
+    { l:'DURATION', v: stats.durationH+'h '+stats.durationM+'m' },
+  ];
+  const cols = items.length, cw = (W*0.84)/cols, sx = W*0.08;
+  const lc = theme==='neon'?'rgba(0,255,170,0.5)':theme==='topo'?'rgba(200,220,240,0.4)':dk?'rgba(255,255,255,0.4)':theme==='light-minimal'?'#bbb':'#a09080';
+  const vc = theme==='neon'?'rgba(255,255,255,0.9)':theme==='topo'?'rgba(200,220,240,0.9)':dk?'rgba(255,255,255,0.9)':theme==='light-minimal'?'#333':'#3a3028';
+  const ls = Math.max(9, W*0.01), vs = Math.max(14, W*0.022);
+  ctx.textAlign = 'center';
+  items.forEach((it, i) => {
+    const cx = sx + cw*i + cw/2;
+    ctx.fillStyle = lc; ctx.font = `500 ${ls}px 'DM Sans', sans-serif`; ctx.fillText(it.l, cx, y + h*0.35);
+    ctx.fillStyle = vc; ctx.font = `600 ${vs}px 'JetBrains Mono', monospace`; ctx.fillText(it.v, cx, y + h*0.65);
+  });
+  if (data.pilotName || data.gliderType) {
+    const info = [data.pilotName, data.gliderType].filter(Boolean).join('  ·  ');
+    ctx.fillStyle = lc; ctx.font = `${Math.max(8, W*0.009)}px 'DM Sans', sans-serif`;
+    ctx.textAlign = 'center'; ctx.fillText(info, W/2, y + h*0.88);
+  }
+}
+function drawTopoContours(ctx, cx, cy, w, h, color, lw, count) {
+  ctx.strokeStyle = color; ctx.lineWidth = lw;
+  const seeds = []; for (let i = 0; i < 3; i++) seeds.push({ cx: cx + w*(0.2+Math.random()*0.6), cy: cy + h*(0.2+Math.random()*0.6) });
+  for (let c = 0; c < count; c++) {
+    const r = (c+1)*Math.min(w,h)/(count*1.8);
+    for (const s of seeds) {
+      ctx.beginPath();
+      for (let a = 0; a <= Math.PI*2; a += 0.05) {
+        const wb = Math.sin(a*3+c*0.7)*r*0.15+Math.cos(a*5+c*1.2)*r*0.08;
+        const px = s.cx+Math.cos(a)*(r+wb), py = s.cy+Math.sin(a)*(r+wb)*0.7;
+        if (a===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+      }
+      ctx.closePath(); ctx.stroke();
+    }
+  }
+}
+function formatDate(d) {
+  if (!d) return 'Flight';
+  try { return new Date(d+'T00:00:00').toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'}); } catch { return d; }
+}
+
+// Word-wrap text for canvas
+function wrapText(ctx, text, maxWidth) {
+  const words = text.split(' '), lines = []; let line = '';
+  for (const word of words) {
+    const test = line ? line + ' ' + word : word;
+    if (ctx.measureText(test).width > maxWidth && line) { lines.push(line); line = word; }
+    else line = test;
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
+// Draw the bottom custom text box
+function drawBottomTextBox(ctx, W, y, maxH, heading, body, theme) {
+  if (!heading && !body) return 0;
+  const dk = theme==='dark'||theme==='neon'||theme==='topo';
+  const pad = W * 0.04;
+  const headColor = theme==='neon'?'rgba(0,255,170,0.8)':theme==='topo'?'rgba(200,220,240,0.8)':dk?'rgba(255,255,255,0.85)':theme==='light-minimal'?'#222':'#3a3028';
+  const bodyColor = theme==='neon'?'rgba(255,255,255,0.55)':theme==='topo'?'rgba(200,220,240,0.55)':dk?'rgba(255,255,255,0.55)':theme==='light-minimal'?'#666':'#7a7060';
+  const boxBg = theme==='neon'?'rgba(0,0,0,0.3)':theme==='topo'?'rgba(20,30,45,0.3)':dk?'rgba(0,0,0,0.25)':theme==='light-minimal'?'rgba(0,0,0,0.03)':'rgba(0,0,0,0.04)';
+
+  const headSize = Math.max(12, W * 0.018);
+  const bodySize = Math.max(10, W * 0.013);
+  const lineH = bodySize * 1.6;
+  const boxX = W * 0.08, boxW = W * 0.84;
+
+  // Measure height needed
+  let totalH = pad * 0.6;
+  if (heading) totalH += headSize + pad * 0.5;
+  if (body) {
+    ctx.font = `${bodySize}px 'DM Sans', sans-serif`;
+    const lines = wrapText(ctx, body, boxW - pad * 2);
+    totalH += lines.length * lineH;
+  }
+  totalH += pad * 0.4;
+
+  // Draw box background
+  ctx.fillStyle = boxBg;
+  const radius = W * 0.006;
+  ctx.beginPath();
+  ctx.moveTo(boxX + radius, y); ctx.lineTo(boxX + boxW - radius, y);
+  ctx.quadraticCurveTo(boxX + boxW, y, boxX + boxW, y + radius);
+  ctx.lineTo(boxX + boxW, y + totalH - radius);
+  ctx.quadraticCurveTo(boxX + boxW, y + totalH, boxX + boxW - radius, y + totalH);
+  ctx.lineTo(boxX + radius, y + totalH);
+  ctx.quadraticCurveTo(boxX, y + totalH, boxX, y + totalH - radius);
+  ctx.lineTo(boxX, y + radius);
+  ctx.quadraticCurveTo(boxX, y, boxX + radius, y);
+  ctx.closePath(); ctx.fill();
+
+  let curY = y + pad * 0.6;
+  ctx.textAlign = 'left';
+  if (heading) {
+    ctx.fillStyle = headColor;
+    ctx.font = `600 ${headSize}px 'Oswald', sans-serif`;
+    ctx.fillText(heading, boxX + pad, curY + headSize);
+    curY += headSize + pad * 0.5;
+  }
+  if (body) {
+    ctx.fillStyle = bodyColor;
+    ctx.font = `${bodySize}px 'DM Sans', sans-serif`;
+    const lines = wrapText(ctx, body, boxW - pad * 2);
+    for (const ln of lines) {
+      ctx.fillText(ln, boxX + pad, curY + bodySize);
+      curY += lineH;
+    }
+  }
+  return totalH;
+}
+
+// ============================================================
+// RENDERERS (each adjusted for user text + bottom box)
+// ============================================================
+function getTitle() { return userText.title || formatDate(flightData.date).toUpperCase(); }
+function getSubtitle(stats) {
+  return userText.subtitle || `${Math.abs(stats.bounds.minLat).toFixed(2)}°${stats.bounds.minLat>=0?'N':'S'}  ${Math.abs(stats.bounds.minLon).toFixed(2)}°${stats.bounds.minLon>=0?'E':'W'}`;
+}
+
+function renderSummit(ctx, W, H, pts, stats, data, mapData) {
+  ctx.fillStyle = '#0a0e17'; ctx.fillRect(0, 0, W, H);
+  if (mapData) { drawMapToCanvas(ctx, mapData, 0, 0, W, H, stats.bounds, 0.5); ctx.fillStyle='rgba(8,12,20,0.4)'; ctx.fillRect(0,0,W,H); }
+  const topF = ctx.createLinearGradient(0,0,0,H*0.14); topF.addColorStop(0,'rgba(10,14,23,0.95)'); topF.addColorStop(1,'transparent'); ctx.fillStyle=topF; ctx.fillRect(0,0,W,H*0.14);
+  const botStart = userText.showBottom ? 0.68 : 0.72;
+  const botF = ctx.createLinearGradient(0,H*botStart,0,H*(botStart+0.1)); botF.addColorStop(0,'transparent'); botF.addColorStop(1,'rgba(10,14,23,0.98)'); ctx.fillStyle=botF; ctx.fillRect(0,H*botStart,W,H*0.1);
+  ctx.fillStyle='rgba(10,14,23,0.98)'; ctx.fillRect(0,H*(botStart+0.08),W,H);
+
+  ctx.fillStyle='rgba(255,255,255,0.92)'; ctx.font=`600 ${W*0.04}px 'Bebas Neue', sans-serif`; ctx.textAlign='center';
+  ctx.fillText(getTitle(), W/2, H*0.05);
+  ctx.fillStyle='rgba(255,255,255,0.45)'; ctx.font=`${W*0.013}px 'JetBrains Mono', monospace`;
+  ctx.fillText(getSubtitle(stats), W/2, H*0.07);
+
+  const mapH = userText.showBottom ? 0.55 : 0.6;
+  const fa = { x: W*0.06, y: H*0.1, w: W*0.88, h: H*mapH };
+  const proj = projectPoints(pts, stats.bounds, fa.x, fa.y, fa.w, fa.h, W*0.03);
+  const ar = stats.maxAlt - stats.minAlt || 1;
+  ctx.save(); ctx.shadowBlur=W*0.01; ctx.shadowColor='rgba(232,93,58,0.5)'; ctx.strokeStyle='rgba(232,93,58,0.35)';
+  ctx.lineWidth=W*0.006; ctx.lineCap='round'; ctx.lineJoin='round';
+  ctx.beginPath(); proj.forEach((p,i)=>i===0?ctx.moveTo(p.x,p.y):ctx.lineTo(p.x,p.y)); ctx.stroke(); ctx.restore();
+  for (let i=1;i<proj.length;i++) { const t=(proj[i].alt-stats.minAlt)/ar; ctx.strokeStyle=altColor(t,'warm'); ctx.lineWidth=W*0.0035; ctx.lineCap='round'; ctx.beginPath(); ctx.moveTo(proj[i-1].x,proj[i-1].y); ctx.lineTo(proj[i].x,proj[i].y); ctx.stroke(); }
+  drawMarker(ctx,proj[0].x,proj[0].y,W*0.008,'#4ade80');
+  drawMarker(ctx,proj[proj.length-1].x,proj[proj.length-1].y,W*0.008,'#e85d3a');
+
+  const profY = H*(botStart+0.02);
+  drawAltProfile(ctx,proj,stats,W*0.08,profY,W*0.84,H*0.045,'warm','rgba(255,255,255,0.03)');
+
+  let statsY = profY + H*0.06;
+  if (userText.showBottom && (userText.bottomHeading || userText.bottomBody)) {
+    const bh = drawBottomTextBox(ctx, W, statsY, H*0.15, userText.bottomHeading, userText.bottomBody, 'dark');
+    statsY += bh + H*0.015;
+  }
+  drawStatsBar(ctx, W, statsY, H - statsY, stats, data, 'dark');
+}
+
+function renderCartograph(ctx, W, H, pts, stats, data, mapData) {
+  const bg = ctx.createLinearGradient(0,0,W,H); bg.addColorStop(0,'#f5f0e8'); bg.addColorStop(0.5,'#ede7d9'); bg.addColorStop(1,'#e8e0d0'); ctx.fillStyle=bg; ctx.fillRect(0,0,W,H);
+  const bm = W*0.04;
+  const mapArea = { x: bm+4, y: H*0.1, w: W-2*bm-8, h: H*(userText.showBottom?0.54:0.6) };
+  if (mapData) {
+    ctx.save(); ctx.beginPath(); ctx.rect(mapArea.x,mapArea.y,mapArea.w,mapArea.h); ctx.clip();
+    drawMapToCanvas(ctx,mapData,mapArea.x,mapArea.y,mapArea.w,mapArea.h,stats.bounds,0.25);
+    ctx.globalCompositeOperation='multiply'; ctx.fillStyle='rgba(230,215,185,0.35)'; ctx.fillRect(mapArea.x,mapArea.y,mapArea.w,mapArea.h);
+    ctx.globalCompositeOperation='source-over'; ctx.fillStyle='rgba(180,160,120,0.08)'; ctx.fillRect(mapArea.x,mapArea.y,mapArea.w,mapArea.h); ctx.restore();
+  }
+  ctx.strokeStyle='#b8a88a'; ctx.lineWidth=1; ctx.strokeRect(bm,bm,W-2*bm,H-2*bm); ctx.strokeRect(bm+4,bm+4,W-2*bm-8,H-2*bm-8);
+  const vig = ctx.createRadialGradient(W/2,H/2,W*0.3,W/2,H/2,W*0.85); vig.addColorStop(0,'transparent'); vig.addColorStop(1,'rgba(139,119,90,0.18)'); ctx.fillStyle=vig; ctx.fillRect(0,0,W,H);
+  ctx.fillStyle='#3a3028'; ctx.font=`italic ${W*0.028}px 'Playfair Display', serif`; ctx.textAlign='center';
+  ctx.fillText(userText.title || 'Flight Record', W/2, H*0.065);
+  ctx.fillStyle='#8a7a68'; ctx.font=`${W*0.016}px 'Playfair Display', serif`;
+  ctx.fillText(userText.subtitle || formatDate(data.date), W/2, H*0.09);
+
+  ctx.fillStyle='#b8a88a'; ctx.font=`${W*0.009}px 'JetBrains Mono', monospace`; ctx.textAlign='center';
+  for (let i=0;i<=4;i++) { const lon=stats.bounds.minLon+(stats.bounds.maxLon-stats.bounds.minLon)*i/4; ctx.fillText(lon.toFixed(3)+'°',mapArea.x+(mapArea.w/4)*i,mapArea.y+mapArea.h+W*0.016); }
+  ctx.textAlign='right';
+  for (let i=0;i<=4;i++) { const lat=stats.bounds.maxLat-(stats.bounds.maxLat-stats.bounds.minLat)*i/4; ctx.fillText(lat.toFixed(3)+'°',mapArea.x-W*0.008,mapArea.y+(mapArea.h/4)*i+4); }
+
+  const proj = projectPoints(pts,stats.bounds,mapArea.x,mapArea.y,mapArea.w,mapArea.h,W*0.03);
+  const ar = stats.maxAlt-stats.minAlt||1;
+  ctx.strokeStyle='rgba(80,60,40,0.35)'; ctx.lineWidth=W*0.005; ctx.lineCap='round'; ctx.lineJoin='round';
+  ctx.beginPath(); proj.forEach((p,i)=>i===0?ctx.moveTo(p.x+2,p.y+2):ctx.lineTo(p.x+2,p.y+2)); ctx.stroke();
+  for (let i=1;i<proj.length;i++) { const t=(proj[i].alt-stats.minAlt)/ar; ctx.strokeStyle=`rgb(${Math.round(130+t*100)},${Math.round(40+(1-t)*40)},${Math.round(20+(1-t)*30)})`; ctx.lineWidth=W*0.003; ctx.beginPath(); ctx.moveTo(proj[i-1].x,proj[i-1].y); ctx.lineTo(proj[i].x,proj[i].y); ctx.stroke(); }
+  drawMarker(ctx,proj[0].x,proj[0].y,W*0.007,'#3a6b35');
+  drawMarker(ctx,proj[proj.length-1].x,proj[proj.length-1].y,W*0.007,'#8b2500');
+
+  const profY = mapArea.y+mapArea.h+H*0.035;
+  drawAltProfile(ctx,proj,stats,mapArea.x,profY,mapArea.w,H*0.04,'ink','rgba(160,140,110,0.08)');
+
+  let statsY = profY + H*0.055;
+  if (userText.showBottom && (userText.bottomHeading||userText.bottomBody)) {
+    const bh = drawBottomTextBox(ctx, W, statsY, H*0.12, userText.bottomHeading, userText.bottomBody, 'light');
+    statsY += bh + H*0.012;
+  }
+  drawStatsBar(ctx, W, statsY, H-statsY, stats, data, 'light');
+}
+
+function renderWhiteout(ctx, W, H, pts, stats, data) {
+  ctx.fillStyle='#fafafa'; ctx.fillRect(0,0,W,H);
+  const m = W*0.06; ctx.strokeStyle='#e0e0e0'; ctx.lineWidth=1; ctx.strokeRect(m,m,W-2*m,H-2*m);
+  const tx = m+W*0.03;
+  ctx.fillStyle='#1a1a1a'; ctx.font=`300 ${W*0.045}px 'Oswald', sans-serif`; ctx.textAlign='left';
+  ctx.fillText(userText.title || formatDate(data.date), tx, m+H*0.06);
+  ctx.fillStyle='#999'; ctx.font=`${W*0.013}px 'DM Sans', sans-serif`;
+  ctx.fillText(userText.subtitle || data.pilotName || '', tx, m+H*0.08);
+
+  const mapH = userText.showBottom ? 0.50 : 0.56;
+  const ma = { x: m+W*0.02, y: H*0.14, w: W-2*m-W*0.04, h: H*mapH };
+  const proj = projectPoints(pts,stats.bounds,ma.x,ma.y,ma.w,ma.h,W*0.05);
+  const ar = stats.maxAlt-stats.minAlt||1;
+  ctx.strokeStyle='#1a1a1a'; ctx.lineWidth=W*0.002; ctx.lineCap='round'; ctx.lineJoin='round';
+  ctx.beginPath(); proj.forEach((p,i)=>i===0?ctx.moveTo(p.x,p.y):ctx.lineTo(p.x,p.y)); ctx.stroke();
+  const step = Math.max(1,Math.floor(proj.length/80));
+  for (let i=0;i<proj.length;i+=step) { const t=(proj[i].alt-stats.minAlt)/ar; ctx.fillStyle=altColor(t,'cool'); ctx.beginPath(); ctx.arc(proj[i].x,proj[i].y,W*0.003,0,Math.PI*2); ctx.fill(); }
+  drawMarker(ctx,proj[0].x,proj[0].y,W*0.006,'#22c55e');
+  drawMarker(ctx,proj[proj.length-1].x,proj[proj.length-1].y,W*0.006,'#ef4444');
+
+  const profY = ma.y+ma.h+H*0.03;
+  drawAltProfile(ctx,proj,stats,ma.x,profY,ma.w,H*0.04,'cool','#f0f0f0');
+
+  let statsY = profY + H*0.055;
+  if (userText.showBottom && (userText.bottomHeading||userText.bottomBody)) {
+    const bh = drawBottomTextBox(ctx, W, statsY, H*0.12, userText.bottomHeading, userText.bottomBody, 'light-minimal');
+    statsY += bh + H*0.012;
+  }
+  drawStatsBar(ctx, W, statsY, H-statsY, stats, data, 'light-minimal');
+}
+
+function renderNeon(ctx, W, H, pts, stats, data, mapData) {
+  ctx.fillStyle='#030306'; ctx.fillRect(0,0,W,H);
+  if (mapData) { drawMapToCanvas(ctx,mapData,0,0,W,H,stats.bounds,0.45); ctx.fillStyle='rgba(3,3,8,0.7)'; ctx.fillRect(0,0,W,H); }
+  const topF = ctx.createLinearGradient(0,0,0,H*0.14); topF.addColorStop(0,'rgba(3,3,6,0.95)'); topF.addColorStop(1,'transparent'); ctx.fillStyle=topF; ctx.fillRect(0,0,W,H*0.14);
+  const botStart = userText.showBottom ? 0.68 : 0.72;
+  const botF = ctx.createLinearGradient(0,H*botStart,0,H*(botStart+0.1)); botF.addColorStop(0,'transparent'); botF.addColorStop(1,'rgba(3,3,6,0.98)'); ctx.fillStyle=botF; ctx.fillRect(0,H*botStart,W,H*0.1);
+  ctx.fillStyle='rgba(3,3,6,0.98)'; ctx.fillRect(0,H*(botStart+0.08),W,H);
+  ctx.strokeStyle='rgba(255,255,255,0.025)'; ctx.lineWidth=1;
+  const gs=W*0.03; for (let x=0;x<W;x+=gs){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke();} for (let y=0;y<H;y+=gs){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();}
+  ctx.save(); ctx.shadowColor='#00ffaa'; ctx.shadowBlur=W*0.015; ctx.fillStyle='#00ffaa'; ctx.font=`600 ${W*0.035}px 'Bebas Neue', sans-serif`; ctx.textAlign='center'; ctx.fillText(getTitle(), W/2, H*0.05); ctx.restore();
+  ctx.fillStyle='rgba(255,255,255,0.3)'; ctx.font=`${W*0.011}px 'JetBrains Mono', monospace`; ctx.textAlign='center';
+  ctx.fillText(getSubtitle(stats), W/2, H*0.07);
+
+  const mapH = userText.showBottom ? 0.55 : 0.6;
+  const fa = { x:W*0.06, y:H*0.1, w:W*0.88, h:H*mapH };
+  const proj = projectPoints(pts,stats.bounds,fa.x,fa.y,fa.w,fa.h,W*0.03);
+  const ar = stats.maxAlt-stats.minAlt||1;
+  ctx.save(); ctx.shadowBlur=W*0.014;
+  for (let i=1;i<proj.length;i++) { const t=(proj[i].alt-stats.minAlt)/ar; const c=altColor(t,'neon'); ctx.shadowColor=c; ctx.strokeStyle=c; ctx.lineWidth=W*0.005; ctx.lineCap='round'; ctx.beginPath(); ctx.moveTo(proj[i-1].x,proj[i-1].y); ctx.lineTo(proj[i].x,proj[i].y); ctx.stroke(); }
+  ctx.restore();
+  for (let i=1;i<proj.length;i++) { const t=(proj[i].alt-stats.minAlt)/ar; ctx.strokeStyle=altColor(t,'neon'); ctx.globalAlpha=0.9; ctx.lineWidth=W*0.002; ctx.beginPath(); ctx.moveTo(proj[i-1].x,proj[i-1].y); ctx.lineTo(proj[i].x,proj[i].y); ctx.stroke(); }
+  ctx.globalAlpha=1;
+  ctx.save(); ctx.shadowBlur=W*0.01; ctx.shadowColor='#00ff88'; drawMarker(ctx,proj[0].x,proj[0].y,W*0.008,'#00ff88'); ctx.shadowColor='#ff4466'; drawMarker(ctx,proj[proj.length-1].x,proj[proj.length-1].y,W*0.008,'#ff4466'); ctx.restore();
+
+  const profY = H*(botStart+0.02);
+  drawAltProfile(ctx,proj,stats,W*0.08,profY,W*0.84,H*0.045,'neon','rgba(255,255,255,0.02)');
+
+  let statsY = profY + H*0.06;
+  if (userText.showBottom && (userText.bottomHeading||userText.bottomBody)) {
+    const bh = drawBottomTextBox(ctx, W, statsY, H*0.15, userText.bottomHeading, userText.bottomBody, 'neon');
+    statsY += bh + H*0.015;
+  }
+  drawStatsBar(ctx, W, statsY, H-statsY, stats, data, 'neon');
+}
+
+function renderTopo(ctx, W, H, pts, stats, data, mapData) {
+  ctx.fillStyle='#1a2332'; ctx.fillRect(0,0,W,H);
+  if (mapData) { drawMapToCanvas(ctx,mapData,0,0,W,H,stats.bounds,0.4); ctx.globalCompositeOperation='multiply'; ctx.fillStyle='rgba(35,55,95,0.75)'; ctx.fillRect(0,0,W,H); ctx.globalCompositeOperation='source-over'; ctx.fillStyle='rgba(20,30,45,0.3)'; ctx.fillRect(0,0,W,H); }
+  drawTopoContours(ctx,0,0,W,H,'rgba(100,160,200,0.04)',0.5,20);
+  const topF = ctx.createLinearGradient(0,0,0,H*0.13); topF.addColorStop(0,'rgba(26,35,50,0.95)'); topF.addColorStop(1,'transparent'); ctx.fillStyle=topF; ctx.fillRect(0,0,W,H*0.13);
+  const botStart = userText.showBottom ? 0.68 : 0.72;
+  const botF = ctx.createLinearGradient(0,H*botStart,0,H*(botStart+0.08)); botF.addColorStop(0,'transparent'); botF.addColorStop(1,'rgba(26,35,50,0.98)'); ctx.fillStyle=botF; ctx.fillRect(0,H*botStart,W,H*0.08);
+  ctx.fillStyle='rgba(26,35,50,0.98)'; ctx.fillRect(0,H*(botStart+0.06),W,H);
+
+  ctx.fillStyle='rgba(200,220,240,0.88)'; ctx.font=`300 ${W*0.036}px 'Oswald', sans-serif`; ctx.textAlign='center';
+  ctx.fillText(getTitle(), W/2, H*0.055);
+  ctx.fillStyle='rgba(200,220,240,0.35)'; ctx.font=`${W*0.011}px 'JetBrains Mono', monospace`;
+  ctx.fillText(userText.subtitle || 'PARAGLIDING FLIGHT', W/2, H*0.075);
+
+  const mapH = userText.showBottom ? 0.55 : 0.6;
+  const fa = { x:W*0.06, y:H*0.1, w:W*0.88, h:H*mapH };
+  const proj = projectPoints(pts,stats.bounds,fa.x,fa.y,fa.w,fa.h,W*0.03);
+  const ar = stats.maxAlt-stats.minAlt||1;
+  ctx.strokeStyle='rgba(0,0,0,0.45)'; ctx.lineWidth=W*0.006; ctx.lineCap='round'; ctx.lineJoin='round';
+  ctx.beginPath(); proj.forEach((p,i)=>i===0?ctx.moveTo(p.x,p.y):ctx.lineTo(p.x,p.y)); ctx.stroke();
+  for (let i=1;i<proj.length;i++) { const t=(proj[i].alt-stats.minAlt)/ar; ctx.strokeStyle=`hsla(${180+t*40},65%,${55+t*20}%,0.9)`; ctx.lineWidth=W*0.003; ctx.beginPath(); ctx.moveTo(proj[i-1].x,proj[i-1].y); ctx.lineTo(proj[i].x,proj[i].y); ctx.stroke(); }
+  drawMarker(ctx,proj[0].x,proj[0].y,W*0.007,'#6ee7b7');
+  drawMarker(ctx,proj[proj.length-1].x,proj[proj.length-1].y,W*0.007,'#f87171');
+
+  const profY = H*(botStart+0.02);
+  drawAltProfile(ctx,proj,stats,W*0.08,profY,W*0.84,H*0.04,'cool','rgba(100,160,200,0.04)');
+
+  let statsY = profY + H*0.055;
+  if (userText.showBottom && (userText.bottomHeading||userText.bottomBody)) {
+    const bh = drawBottomTextBox(ctx, W, statsY, H*0.15, userText.bottomHeading, userText.bottomBody, 'topo');
+    statsY += bh + H*0.015;
+  }
+  drawStatsBar(ctx, W, statsY, H-statsY, stats, data, 'topo');
+}
+
+// ============================================================
+// RENDER DISPATCHER
+// ============================================================
+let renderQueued = false;
+async function renderPoster() {
+  if (!flightData) return;
+  const canvas = document.getElementById('posterCanvas');
+  const ctx = canvas.getContext('2d');
+  const size = SIZES[currentSize]; canvas.width = size.w; canvas.height = size.h;
+  const design = DESIGNS.find(d => d.id === currentDesign);
+  const { points } = flightData, stats = flightStats;
+  let mapData = null;
+  if (design.mapSource) {
+    const ck = design.mapSource;
+    if (!mapCache[ck]) {
+      loading.classList.add('active');
+      document.getElementById('loadingProgress').textContent = 'Loading map tiles...';
+      mapCache[ck] = await loadMapRegion(stats.bounds, size.w, size.h, design.mapSource, 0.8);
+      loading.classList.remove('active');
+    }
+    mapData = mapCache[ck];
+  }
+  ctx.clearRect(0, 0, size.w, size.h);
+  switch (currentDesign) {
+    case 'summit': renderSummit(ctx,size.w,size.h,points,stats,flightData,mapData); break;
+    case 'cartograph': renderCartograph(ctx,size.w,size.h,points,stats,flightData,mapData); break;
+    case 'whiteout': renderWhiteout(ctx,size.w,size.h,points,stats,flightData); break;
+    case 'neon': renderNeon(ctx,size.w,size.h,points,stats,flightData,mapData); break;
+    case 'topo': renderTopo(ctx,size.w,size.h,points,stats,flightData,mapData); break;
+  }
+  document.getElementById('downloadBar').classList.add('active');
+}
+
+// Debounced render for text input
+let renderTimer = null;
+function queueRender() { clearTimeout(renderTimer); renderTimer = setTimeout(renderPoster, 250); }
+
+// ============================================================
+// UI WIRING
+// ============================================================
+const uploadZone = document.getElementById('uploadZone');
+const uploadBox = document.getElementById('uploadBox');
+const fileInput = document.getElementById('fileInput');
+const studio = document.getElementById('studio');
+const loading = document.getElementById('loading');
+const designChips = document.getElementById('designChips');
+
+// Design chips
+DESIGNS.forEach(d => {
+  const chip = document.createElement('button');
+  chip.className = 'design-chip' + (d.id === currentDesign ? ' active' : '');
+  chip.innerHTML = `${d.name}<span class="chip-sub">${d.sub}</span>`;
+  chip.addEventListener('click', () => {
+    document.querySelectorAll('.design-chip').forEach(c => c.classList.remove('active'));
+    chip.classList.add('active');
+    currentDesign = d.id;
+    renderPoster();
+  });
+  designChips.appendChild(chip);
+});
+
+// Text fields
+document.getElementById('titleText').addEventListener('input', e => { userText.title = e.target.value; queueRender(); });
+document.getElementById('subtitleText').addEventListener('input', e => { userText.subtitle = e.target.value; queueRender(); });
+document.getElementById('bottomHeading').addEventListener('input', e => { userText.bottomHeading = e.target.value; queueRender(); });
+document.getElementById('bottomBody').addEventListener('input', e => { userText.bottomBody = e.target.value; queueRender(); });
+
+// Bottom toggle
+const bottomToggle = document.getElementById('bottomToggle');
+const bottomFields = document.getElementById('bottomTextFields');
+bottomToggle.addEventListener('click', () => {
+  userText.showBottom = !userText.showBottom;
+  bottomToggle.classList.toggle('on', userText.showBottom);
+  bottomFields.style.display = userText.showBottom ? 'block' : 'none';
+  queueRender();
+});
+
+// File handling
+function handleFile(file) {
+  if (!file || !file.name.toLowerCase().endsWith('.igc')) return;
+  loading.classList.add('active');
+  document.getElementById('loadingProgress').textContent = 'Parsing flight data...';
+  const reader = new FileReader();
+  reader.onload = async e => {
+    flightData = parseIGC(e.target.result);
+    if (flightData.points.length < 2) { alert('Could not parse flight data.'); loading.classList.remove('active'); return; }
+    flightStats = computeStats(flightData.points);
+    mapCache = {};
+
+    // Pre-fill text fields
+    document.getElementById('titleText').value = '';
+    document.getElementById('subtitleText').value = '';
+    document.getElementById('titleText').placeholder = formatDate(flightData.date).toUpperCase();
+    document.getElementById('subtitleText').placeholder = `${Math.abs(flightStats.bounds.minLat).toFixed(2)}°${flightStats.bounds.minLat>=0?'N':'S'}, ${Math.abs(flightStats.bounds.minLon).toFixed(2)}°${flightStats.bounds.minLon>=0?'E':'W'}`;
+    userText = { title: '', subtitle: '', showBottom: false, bottomHeading: '', bottomBody: '' };
+    bottomToggle.classList.remove('on');
+    bottomFields.style.display = 'none';
+    document.getElementById('bottomHeading').value = '';
+    document.getElementById('bottomBody').value = '';
+
+    // Stats panel
+    const sp = document.getElementById('statsPanel');
+    sp.innerHTML = '';
+    [
+      { l: 'Distance', v: flightStats.totalDist.toFixed(1) + ' km' },
+      { l: 'Max Altitude', v: flightStats.maxAlt + ' m' },
+      { l: 'Min Altitude', v: flightStats.minAlt + ' m' },
+      { l: 'Total Climb', v: flightStats.totalClimb + ' m' },
+      { l: 'Max Speed', v: flightStats.maxSpeed.toFixed(0) + ' km/h' },
+      { l: 'Duration', v: flightStats.durationH + 'h ' + flightStats.durationM + 'm' },
+      { l: 'Pilot', v: flightData.pilotName || '—' },
+      { l: 'Glider', v: flightData.gliderType || '—' },
+    ].forEach(s => {
+      const row = document.createElement('div'); row.className = 'stat-row';
+      row.innerHTML = `<span class="s-label">${s.l}</span><span class="s-value">${s.v}</span>`;
+      sp.appendChild(row);
+    });
+
+    uploadZone.style.display = 'none';
+    studio.classList.add('active');
+    await renderPoster();
+    loading.classList.remove('active');
+  };
+  reader.readAsText(file);
+}
+
+uploadBox.addEventListener('click', () => fileInput.click());
+document.getElementById('browseLink').addEventListener('click', e => { e.stopPropagation(); fileInput.click(); });
+fileInput.addEventListener('change', e => { if (e.target.files[0]) handleFile(e.target.files[0]); });
+uploadBox.addEventListener('dragover', e => { e.preventDefault(); uploadBox.classList.add('dragging'); });
+uploadBox.addEventListener('dragleave', () => uploadBox.classList.remove('dragging'));
+uploadBox.addEventListener('drop', e => { e.preventDefault(); uploadBox.classList.remove('dragging'); if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); });
+
+document.getElementById('sizeSelect').addEventListener('change', e => { currentSize = e.target.value; renderPoster(); });
+document.getElementById('downloadBtn').addEventListener('click', () => {
+  const canvas = document.getElementById('posterCanvas');
+  const link = document.createElement('a');
+  link.download = `flight-poster-${currentDesign}-${currentSize}.png`;
+  link.href = canvas.toDataURL('image/png'); link.click();
+});
+document.getElementById('newFileBtn').addEventListener('click', () => {
+  studio.classList.remove('active');
+  document.getElementById('downloadBar').classList.remove('active');
+  uploadZone.style.display = 'flex';
+  fileInput.value = ''; flightData = null; flightStats = null; mapCache = {};
+});
+</script>
+</body>
+</html>
