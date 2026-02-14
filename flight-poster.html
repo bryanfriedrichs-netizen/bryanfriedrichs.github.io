@@ -213,11 +213,150 @@
     .loading-text { font-family: 'Oswald', sans-serif; font-size: 1.1rem; letter-spacing: 2px; color: var(--text-dim); }
     .loading-progress { color: var(--text-dim); font-size: 0.85rem; font-family: 'JetBrains Mono', monospace; }
 
+    /* Checkout modal */
+    .modal-overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,0.75); z-index: 200;
+      align-items: center; justify-content: center;
+      backdrop-filter: blur(4px);
+    }
+    .modal-overlay.active { display: flex; }
+    .modal {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 16px; width: 520px; max-width: 95vw;
+      max-height: 90vh; overflow-y: auto;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+    }
+    .modal-header {
+      padding: 1.5rem 1.75rem 1rem;
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .modal-header h2 {
+      font-family: 'Oswald', sans-serif; font-size: 1.2rem;
+      letter-spacing: 1px; font-weight: 500;
+    }
+    .modal-close {
+      background: none; border: none; color: var(--text-dim);
+      font-size: 1.4rem; cursor: pointer; padding: 0.25rem;
+      line-height: 1; transition: color 0.2s;
+    }
+    .modal-close:hover { color: var(--text); }
+    .modal-body { padding: 1.5rem 1.75rem; }
+    .modal-footer {
+      padding: 1rem 1.75rem 1.5rem;
+      border-top: 1px solid var(--border);
+      display: flex; gap: 0.75rem; justify-content: flex-end;
+    }
+
+    /* Product cards */
+    .product-grid {
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: 0.75rem; margin-bottom: 1rem;
+    }
+    .product-card {
+      background: var(--surface2); border: 2px solid var(--border);
+      border-radius: 10px; padding: 1rem; cursor: pointer;
+      transition: all 0.2s; text-align: center;
+    }
+    .product-card:hover { border-color: var(--text-dim); }
+    .product-card.selected { border-color: var(--accent); background: var(--accent-glow); }
+    .product-card .product-icon { font-size: 1.8rem; margin-bottom: 0.5rem; display: block; }
+    .product-card .product-name {
+      font-weight: 600; font-size: 0.9rem; margin-bottom: 0.2rem; color: var(--text);
+    }
+    .product-card .product-size {
+      font-size: 0.75rem; color: var(--text-dim); margin-bottom: 0.5rem;
+    }
+    .product-card .product-price {
+      font-family: 'JetBrains Mono', monospace; font-weight: 600;
+      font-size: 1.1rem; color: var(--accent);
+    }
+
+    /* Order summary */
+    .order-summary {
+      background: var(--surface2); border-radius: 10px;
+      padding: 1rem 1.25rem; margin-bottom: 1.25rem;
+    }
+    .order-line {
+      display: flex; justify-content: space-between;
+      padding: 0.3rem 0; font-size: 0.88rem;
+    }
+    .order-line .ol-label { color: var(--text-dim); }
+    .order-line .ol-value { font-family: 'JetBrains Mono', monospace; font-weight: 600; }
+    .order-line.total {
+      border-top: 1px solid var(--border);
+      margin-top: 0.5rem; padding-top: 0.6rem;
+      font-size: 1rem;
+    }
+    .order-line.total .ol-label { color: var(--text); font-weight: 600; }
+    .order-line.total .ol-value { color: var(--accent); font-size: 1.1rem; }
+
+    /* Modal buttons */
+    .modal-btn {
+      padding: 0.6rem 1.5rem; border-radius: 8px; border: none;
+      font-family: 'DM Sans', sans-serif; font-size: 0.9rem;
+      font-weight: 600; cursor: pointer; transition: all 0.2s;
+      display: inline-flex; align-items: center; gap: 0.4rem;
+    }
+    .modal-btn-primary {
+      background: var(--accent); color: white;
+    }
+    .modal-btn-primary:hover { filter: brightness(1.1); }
+    .modal-btn-primary:disabled {
+      opacity: 0.5; cursor: not-allowed; filter: none;
+    }
+    .modal-btn-secondary {
+      background: var(--surface2); color: var(--text-dim);
+      border: 1px solid var(--border);
+    }
+    .modal-btn-secondary:hover { border-color: var(--text-dim); color: var(--text); }
+
+    /* Order print button */
+    .order-btn {
+      background: #16a34a; color: white; border: none;
+      padding: 0.55rem 1.25rem; border-radius: 8px;
+      font-family: 'DM Sans', sans-serif; font-size: 0.85rem; font-weight: 600;
+      cursor: pointer; transition: all 0.2s; display: flex; align-items: center; gap: 0.4rem;
+    }
+    .order-btn:hover { filter: brightness(1.1); transform: translateY(-1px); }
+
+    /* How-it-works steps */
+    .how-it-works {
+      background: var(--surface2); border-radius: 10px;
+      padding: 1rem 1.25rem; margin-bottom: 1.25rem;
+    }
+    .how-it-works .hw-title {
+      font-family: 'Oswald', sans-serif; font-size: 0.7rem;
+      letter-spacing: 1.5px; text-transform: uppercase;
+      color: var(--text-dim); margin-bottom: 0.75rem;
+    }
+    .hw-step {
+      display: flex; gap: 0.75rem; align-items: flex-start;
+      padding: 0.4rem 0; font-size: 0.85rem; color: var(--text-dim);
+      line-height: 1.4;
+    }
+    .hw-num {
+      background: var(--accent); color: white; font-weight: 700;
+      width: 22px; height: 22px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.7rem; flex-shrink: 0; margin-top: 1px;
+    }
+
+    /* Setup placeholder */
+    .setup-note {
+      background: rgba(59,130,246,0.1); border: 1px solid rgba(59,130,246,0.25);
+      border-radius: 8px; padding: 0.75rem 1rem; margin-top: 1rem;
+      font-size: 0.78rem; color: #93c5fd; line-height: 1.5;
+      text-align: center;
+    }
+
     @media (max-width: 900px) {
       .studio.active { flex-direction: column; }
       .panel { width: 100%; min-width: unset; max-height: 45vh; border-right: none; border-bottom: 1px solid var(--border); }
       #posterCanvas { max-width: calc(100vw - 32px); max-height: 50vh; }
       .download-bar { right: 50%; transform: translateX(50%); }
+      .product-grid { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -307,6 +446,7 @@
       <option value="tshirt">T-Shirt</option>
     </select>
     <button class="download-btn" id="downloadBtn">&#11015; Download PNG</button>
+    <button class="order-btn" id="orderBtn">&#9698; Order Print</button>
   </div>
 </div>
 
@@ -314,6 +454,52 @@
   <div class="spinner"></div>
   <div class="loading-text">GENERATING POSTER</div>
   <div class="loading-progress" id="loadingProgress">Loading map tiles...</div>
+</div>
+
+<!-- Order Modal -->
+<div class="modal-overlay" id="checkoutModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>ORDER A PRINT</h2>
+      <button class="modal-close" id="modalClose">&times;</button>
+    </div>
+    <div class="modal-body">
+      <!-- Product Selection -->
+      <div class="product-grid" id="productGrid"></div>
+
+      <div class="order-summary" id="productSummary" style="display:none;">
+        <div class="order-line">
+          <span class="ol-label" id="summaryProduct">—</span>
+          <span class="ol-value" id="summaryPrice">—</span>
+        </div>
+        <div class="order-line">
+          <span class="ol-label">Shipping (estimated)</span>
+          <span class="ol-value" id="summaryShipping">—</span>
+        </div>
+        <div class="order-line total">
+          <span class="ol-label">Total</span>
+          <span class="ol-value" id="summaryTotal">—</span>
+        </div>
+      </div>
+
+      <div class="how-it-works">
+        <div class="hw-title">How It Works</div>
+        <div class="hw-step"><span class="hw-num">1</span> Select your product above</div>
+        <div class="hw-step"><span class="hw-num">2</span> Click checkout — your poster PNG auto-downloads</div>
+        <div class="hw-step"><span class="hw-num">3</span> Complete payment on Stripe's secure checkout page</div>
+        <div class="hw-step"><span class="hw-num">4</span> Reply to the confirmation email with your poster file attached</div>
+      </div>
+
+      <div class="setup-note" id="setupNote" style="display:none;">
+        <strong>Setup needed:</strong> Add your Stripe Payment Link URLs in the PRODUCTS config at the bottom of this file.
+        Create them at <a href="https://dashboard.stripe.com/payment-links" target="_blank" style="color:#93c5fd;">dashboard.stripe.com/payment-links</a>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button class="modal-btn modal-btn-primary" id="checkoutBtn" disabled>Select a product</button>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -965,6 +1151,193 @@ document.getElementById('newFileBtn').addEventListener('click', () => {
   uploadZone.style.display = 'flex';
   fileInput.value = ''; flightData = null; flightStats = null; mapCache = {};
 });
+
+// ============================================================
+// ORDER FLOW — STRIPE PAYMENT LINKS
+// ============================================================
+// To set up:
+// 1. Go to https://dashboard.stripe.com/payment-links
+// 2. Create a Payment Link for each product below
+//    - Set the price, enable "Collect shipping address"
+//    - Optionally set a custom success page
+// 3. Paste each URL into the `paymentLink` field below
+//
+// That's it — no backend server needed.
+// When a customer pays, you'll get a Stripe notification email.
+// The customer's poster PNG auto-downloads before checkout,
+// and they're asked to reply to the confirmation email with
+// the file attached. You then submit to Printful manually.
+// ============================================================
+
+const PRODUCTS = [
+  { id: 'poster-24x36', name: 'Large Poster',   size: '24 × 36″', icon: '🖼️', price: 34.99, shipping: 6.99, paymentLink: 'https://buy.stripe.com/fZu6oz5a3eV9gkL1tv4c804' },
+  { id: 'poster-18x24', name: 'Medium Poster',  size: '18 × 24″', icon: '🖼️', price: 24.99, shipping: 5.99, paymentLink: 'https://buy.stripe.com/dRmbIT31VaET2tV8VX4c803' },
+  { id: 'poster-11x17', name: 'Small Poster',   size: '11 × 17″', icon: '🖼️', price: 16.99, shipping: 4.99, paymentLink: 'https://buy.stripe.com/6oU6oz45Z7sH5G7gop4c802' },
+  { id: 'square-12x12', name: 'Square Print',   size: '12 × 12″', icon: '◻️', price: 19.99, shipping: 4.99, paymentLink: 'https://buy.stripe.com/dRm9AL0TNbIX0lN3BD4c800' },
+  { id: 'tshirt',       name: 'T-Shirt',        size: 'S–XXL',     icon: '👕', price: 29.99, shipping: 5.99, paymentLink: 'https://buy.stripe.com/aFabITgSLaETecD4FH4c801' },
+];
+
+let selectedProduct = null;
+
+// Build product grid
+const productGrid = document.getElementById('productGrid');
+PRODUCTS.forEach(p => {
+  const card = document.createElement('div');
+  card.className = 'product-card';
+  card.dataset.id = p.id;
+  card.innerHTML = `
+    <span class="product-icon">${p.icon}</span>
+    <div class="product-name">${p.name}</div>
+    <div class="product-size">${p.size}</div>
+    <div class="product-price">$${p.price.toFixed(2)}</div>
+  `;
+  card.addEventListener('click', () => {
+    document.querySelectorAll('.product-card').forEach(c => c.classList.remove('selected'));
+    card.classList.add('selected');
+    selectedProduct = p;
+    // Auto-switch poster canvas size to match product
+    if (SIZES[p.id]) { currentSize = p.id; document.getElementById('sizeSelect').value = p.id; renderPoster(); }
+    updateProductSummary();
+    checkoutBtn.textContent = '🔒 Checkout on Stripe →';
+    checkoutBtn.disabled = false;
+  });
+  productGrid.appendChild(card);
+});
+
+function updateProductSummary() {
+  if (!selectedProduct) return;
+  const s = document.getElementById('productSummary');
+  s.style.display = 'block';
+  document.getElementById('summaryProduct').textContent = `${selectedProduct.name} (${selectedProduct.size})`;
+  document.getElementById('summaryPrice').textContent = `$${selectedProduct.price.toFixed(2)}`;
+  document.getElementById('summaryShipping').textContent = `$${selectedProduct.shipping.toFixed(2)}`;
+  document.getElementById('summaryTotal').textContent = `$${(selectedProduct.price + selectedProduct.shipping).toFixed(2)}`;
+}
+
+// Show setup note if no payment links configured
+const anyLinksConfigured = PRODUCTS.some(p => p.paymentLink);
+if (!anyLinksConfigured) {
+  document.getElementById('setupNote').style.display = 'block';
+}
+
+// Modal
+const checkoutModal = document.getElementById('checkoutModal');
+const checkoutBtn = document.getElementById('checkoutBtn');
+
+function openCheckout() {
+  // Pre-select the current poster size if it matches a product
+  const match = PRODUCTS.find(p => p.id === currentSize);
+  if (match) {
+    selectedProduct = match;
+    document.querySelectorAll('.product-card').forEach(c => {
+      c.classList.toggle('selected', c.dataset.id === match.id);
+    });
+    updateProductSummary();
+    checkoutBtn.textContent = '🔒 Checkout on Stripe →';
+    checkoutBtn.disabled = false;
+  }
+  checkoutModal.classList.add('active');
+}
+
+function closeCheckout() {
+  checkoutModal.classList.remove('active');
+  selectedProduct = null;
+  document.querySelectorAll('.product-card').forEach(c => c.classList.remove('selected'));
+  document.getElementById('productSummary').style.display = 'none';
+  checkoutBtn.textContent = 'Select a product';
+  checkoutBtn.disabled = true;
+}
+
+checkoutBtn.addEventListener('click', async () => {
+  if (!selectedProduct) return;
+
+  const canvas = document.getElementById('posterCanvas');
+
+  // 1. Generate a unique order ID to tie Formspree email ↔ Stripe payment
+  const orderId = 'FP-' + Date.now().toString(36).toUpperCase() + '-' + Math.random().toString(36).substring(2, 6).toUpperCase();
+
+  // 2. Show progress
+  checkoutBtn.disabled = true;
+  checkoutBtn.textContent = '⏳ Preparing your order...';
+
+  try {
+    // 3. Convert canvas to JPEG blob
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.92));
+    const filename = `flight-poster-${currentDesign}-${selectedProduct.id}.jpg`;
+    console.log(`Poster file size: ${(blob.size / 1024 / 1024).toFixed(2)} MB`);
+
+    // 4. Upload poster to imgbb (free image hosting)
+    checkoutBtn.textContent = '⏳ Uploading poster...';
+    const imgbbForm = new FormData();
+    imgbbForm.append('image', blob, filename);
+    imgbbForm.append('name', `${orderId}-${filename}`);
+    const imgbbResp = await fetch('https://api.imgbb.com/1/upload?key=5ff485a736d7ca7c6a7c7da01edf8d7c', {
+      method: 'POST',
+      body: imgbbForm,
+    });
+    if (!imgbbResp.ok) throw new Error(`imgbb upload failed: ${imgbbResp.status}`);
+    const imgbbData = await imgbbResp.json();
+    const posterUrl = imgbbData.data.url;
+    console.log('Poster uploaded to:', posterUrl);
+
+    // 5. Email order details + poster link via Formspree (text only, no attachment)
+    checkoutBtn.textContent = '⏳ Sending order details...';
+    const formspreeResp = await fetch('https://formspree.io/f/xwvqkyop', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify({
+        _subject: `🖼️ New Poster Order ${orderId}`,
+        'Order ID': orderId,
+        'Product': `${selectedProduct.name} (${selectedProduct.size})`,
+        'Price': `$${selectedProduct.price.toFixed(2)}`,
+        'Shipping': `$${selectedProduct.shipping.toFixed(2)}`,
+        'Total': `$${(selectedProduct.price + selectedProduct.shipping).toFixed(2)}`,
+        'Design': currentDesign,
+        'Poster Download': posterUrl,
+        'Note': 'Shipping address is in the matching Stripe payment — search for the Order ID above.'
+      }),
+    });
+    if (!formspreeResp.ok) throw new Error(`Formspree failed: ${formspreeResp.status}`);
+    console.log('Formspree email sent!');
+
+    // 6. Give customer a local download too
+    const dlLink = document.createElement('a');
+    dlLink.download = filename;
+    dlLink.href = URL.createObjectURL(blob);
+    dlLink.click();
+    URL.revokeObjectURL(dlLink.href);
+
+    // 7. Open Stripe Payment Link with client_reference_id
+    if (selectedProduct.paymentLink) {
+      const separator = selectedProduct.paymentLink.includes('?') ? '&' : '?';
+      const stripeUrl = selectedProduct.paymentLink + separator + 'client_reference_id=' + encodeURIComponent(orderId);
+      window.open(stripeUrl, '_blank');
+    }
+
+    closeCheckout();
+  } catch (err) {
+    console.error('Order submission error:', err);
+    checkoutBtn.textContent = '⚠️ Upload issue — downloading instead...';
+    const dlLink = document.createElement('a');
+    dlLink.download = `flight-poster-${currentDesign}-${selectedProduct.id}.jpg`;
+    dlLink.href = canvas.toDataURL('image/jpeg', 0.92);
+    dlLink.click();
+
+    if (selectedProduct.paymentLink) {
+      const separator = selectedProduct.paymentLink.includes('?') ? '&' : '?';
+      const stripeUrl = selectedProduct.paymentLink + separator + 'client_reference_id=' + encodeURIComponent(orderId);
+      window.open(stripeUrl, '_blank');
+    }
+    setTimeout(() => {
+      alert(`Automatic file delivery had an issue. After payment, please email your downloaded poster to bryanfriedrichs@gmail.com with order ID: ${orderId}`);
+      closeCheckout();
+    }, 500);
+  }
+});
+
+document.getElementById('orderBtn').addEventListener('click', openCheckout);
+document.getElementById('modalClose').addEventListener('click', closeCheckout);
+checkoutModal.addEventListener('click', e => { if (e.target === checkoutModal) closeCheckout(); });
 </script>
 </body>
 </html>
