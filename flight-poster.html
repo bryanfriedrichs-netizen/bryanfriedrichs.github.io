@@ -624,11 +624,15 @@ function drawMapToCanvas(ctx, mapData, tx, ty, tw, th, fb, buf) {
   const vb = { minLat: fb.minLat - latR * buf, maxLat: fb.maxLat + latR * buf, minLon: fb.minLon - lonR * buf, maxLon: fb.maxLon + lonR * buf };
   const mb = mapData.bounds, mw = mapData.canvas.width, mh = mapData.canvas.height;
 
-  // Compute source rect in tile-canvas pixel space (already Mercator-projected)
+  // Convert lat to Mercator Y for correct tile-space mapping
+  const mbMercMax = latToMercY(mb.maxLat), mbMercMin = latToMercY(mb.minLat), mbMercR = mbMercMax - mbMercMin;
+  const vbMercMax = latToMercY(vb.maxLat), vbMercMin = latToMercY(vb.minLat);
+
+  // Compute source rect in tile-canvas pixel space (Mercator-projected)
   let sx = ((vb.minLon - mb.minLon) / (mb.maxLon - mb.minLon)) * mw;
-  let sy = ((mb.maxLat - vb.maxLat) / (mb.maxLat - mb.minLat)) * mh;
+  let sy = ((mbMercMax - vbMercMax) / mbMercR) * mh;
   let sw = ((vb.maxLon - vb.minLon) / (mb.maxLon - mb.minLon)) * mw;
-  let sh = ((vb.maxLat - vb.minLat) / (mb.maxLat - mb.minLat)) * mh;
+  let sh = ((vbMercMax - vbMercMin) / mbMercR) * mh;
 
   // Cover-mode: adjust source crop to match target aspect ratio (no stretching)
   const srcAspect = sw / sh;
@@ -668,13 +672,19 @@ let userText = { title: '', subtitle: '', showBottom: false, bottomHeading: '', 
 // ============================================================
 // SHARED DRAWING HELPERS
 // ============================================================
+function latToMercY(lat) {
+  return Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI / 180) / 2));
+}
 function projectPoints(points, bounds, x, y, w, h, padding) {
-  const px = padding || 0, latR = bounds.maxLat - bounds.minLat || 0.001, lonR = bounds.maxLon - bounds.minLon || 0.001;
-  const fa = lonR / latR, ba = (w - 2 * px) / (h - 2 * px);
+  const px = padding || 0;
+  const lonR = (bounds.maxLon - bounds.minLon) || 0.001;
+  const mercMinY = latToMercY(bounds.minLat), mercMaxY = latToMercY(bounds.maxLat);
+  const mercR = mercMaxY - mercMinY || 0.001;
+  const fa = lonR / mercR, ba = (w - 2 * px) / (h - 2 * px);
   let scale, ox, oy;
-  if (fa > ba) { scale = (w - 2 * px) / lonR; ox = x + px; oy = y + px + ((h - 2 * px) - latR * scale) / 2; }
-  else { scale = (h - 2 * px) / latR; ox = x + px + ((w - 2 * px) - lonR * scale) / 2; oy = y + px; }
-  return points.map(p => ({ x: ox + (p.lon - bounds.minLon) * scale, y: oy + (bounds.maxLat - p.lat) * scale, alt: p.alt, time: p.time }));
+  if (fa > ba) { scale = (w - 2 * px) / lonR; ox = x + px; oy = y + px + ((h - 2 * px) - mercR * scale) / 2; }
+  else { scale = (h - 2 * px) / mercR; ox = x + px + ((w - 2 * px) - lonR * scale) / 2; oy = y + px; }
+  return points.map(p => ({ x: ox + (p.lon - bounds.minLon) * scale, y: oy + (mercMaxY - latToMercY(p.lat)) * scale, alt: p.alt, time: p.time }));
 }
 function altColor(t, s) {
   if (s === 'warm') return `rgb(${Math.round(80+t*175)},${Math.round(40+t*80)},${Math.round(20+(1-t)*40)})`;
