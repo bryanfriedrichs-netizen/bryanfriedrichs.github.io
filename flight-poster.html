@@ -148,8 +148,15 @@
       display: flex; justify-content: space-between; align-items: center;
       padding: 0.3rem 0; font-size: 0.82rem;
     }
-    .stat-row .s-label { color: var(--text-dim); }
-    .stat-row .s-value { font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 0.8rem; }
+    .stat-row .s-label { color: var(--text-dim); font-size: 0.8rem; font-weight: 500; white-space: nowrap; }
+    .stat-row .s-input {
+      width: 120px; text-align: right; padding: 0.25rem 0.45rem;
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 6px; color: var(--text);
+      font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; font-weight: 600;
+    }
+    .stat-row .s-input:focus { outline: none; border-color: var(--accent); }
+    .stat-row .s-input::placeholder { color: var(--text-dim); font-weight: 400; }
 
     /* Right: canvas area */
     .canvas-area {
@@ -196,6 +203,14 @@
       transition: all 0.2s;
     }
     .new-file-btn:hover { border-color: var(--accent); color: var(--text); }
+    .orient-btn {
+      background: var(--surface2); border: 1px solid var(--border);
+      color: var(--text-dim); padding: 0.45rem 0.85rem; border-radius: 8px;
+      cursor: pointer; font-family: 'DM Sans', sans-serif; font-size: 0.82rem;
+      transition: all 0.2s; white-space: nowrap;
+    }
+    .orient-btn:hover { border-color: var(--accent); color: var(--text); }
+    .orient-btn.landscape { background: var(--accent); border-color: var(--accent); color: white; }
 
     /* Loading */
     .loading-overlay {
@@ -445,6 +460,7 @@
       <option value="square-12x12">12 × 12″</option>
       <option value="tshirt">T-Shirt</option>
     </select>
+    <button class="orient-btn" id="orientBtn" title="Toggle orientation">&#8693; Portrait</button>
     <button class="download-btn" id="downloadBtn">&#11015; Download PNG</button>
     <button class="order-btn" id="orderBtn">&#9698; Order Print</button>
   </div>
@@ -619,35 +635,50 @@ function loadMapRegion(bounds, canvasW, canvasH, source, bufferFactor) {
     if (total === 0) resolve({ canvas: mc, bounds: eb, zoom: 10 });
   });
 }
-function drawMapToCanvas(ctx, mapData, tx, ty, tw, th, fb, buf) {
-  const latR = fb.maxLat - fb.minLat, lonR = fb.maxLon - fb.minLon;
-  const vb = { minLat: fb.minLat - latR * buf, maxLat: fb.maxLat + latR * buf, minLon: fb.minLon - lonR * buf, maxLon: fb.maxLon + lonR * buf };
-  const mb = mapData.bounds, mw = mapData.canvas.width, mh = mapData.canvas.height;
+// Compute visible bounds that contain the flight with padding AND match target aspect ratio
+function computeVisBounds(flightBounds, targetW, targetH, padding) {
+  const lonR = flightBounds.maxLon - flightBounds.minLon || 0.001;
+  const mercMin = latToMercY(flightBounds.minLat), mercMax = latToMercY(flightBounds.maxLat);
+  const mercR = mercMax - mercMin || 0.001;
 
-  // Convert lat to Mercator Y for correct tile-space mapping
-  const mbMercMax = latToMercY(mb.maxLat), mbMercMin = latToMercY(mb.minLat), mbMercR = mbMercMax - mbMercMin;
-  const vbMercMax = latToMercY(vb.maxLat), vbMercMin = latToMercY(vb.minLat);
+  // Add padding
+  let visMinLon = flightBounds.minLon - lonR * padding;
+  let visMaxLon = flightBounds.maxLon + lonR * padding;
+  let visMercMin = mercMin - mercR * padding;
+  let visMercMax = mercMax + mercR * padding;
 
-  // Compute source rect in tile-canvas pixel space (Mercator-projected)
-  let sx = ((vb.minLon - mb.minLon) / (mb.maxLon - mb.minLon)) * mw;
-  let sy = ((mbMercMax - vbMercMax) / mbMercR) * mh;
-  let sw = ((vb.maxLon - vb.minLon) / (mb.maxLon - mb.minLon)) * mw;
-  let sh = ((vbMercMax - vbMercMin) / mbMercR) * mh;
+  // Expand to match target aspect ratio (contain mode — never clips the flight)
+  const visLonR = visMaxLon - visMinLon;
+  const visMercR = visMercMax - visMercMin;
+  const targetAspect = targetW / targetH;
+  const visAspect = visLonR / visMercR;
 
-  // Cover-mode: adjust source crop to match target aspect ratio (no stretching)
-  const srcAspect = sw / sh;
-  const tgtAspect = tw / th;
-  if (srcAspect > tgtAspect) {
-    // Source wider than target — crop sides
-    const newSw = sh * tgtAspect;
-    sx += (sw - newSw) / 2;
-    sw = newSw;
+  if (visAspect > targetAspect) {
+    // Too wide — expand vertically
+    const newMercR = visLonR / targetAspect;
+    const mercCenter = (visMercMin + visMercMax) / 2;
+    visMercMin = mercCenter - newMercR / 2;
+    visMercMax = mercCenter + newMercR / 2;
   } else {
-    // Source taller than target — crop top/bottom
-    const newSh = sw / tgtAspect;
-    sy += (sh - newSh) / 2;
-    sh = newSh;
+    // Too tall — expand horizontally
+    const newLonR = visMercR * targetAspect;
+    const lonCenter = (visMinLon + visMaxLon) / 2;
+    visMinLon = lonCenter - newLonR / 2;
+    visMaxLon = lonCenter + newLonR / 2;
   }
+
+  return { minLon: visMinLon, maxLon: visMaxLon, mercMin: visMercMin, mercMax: visMercMax };
+}
+
+// Draw map tiles to fill the target rectangle showing exactly the given visBounds
+function drawMapForBounds(ctx, mapData, tx, ty, tw, th, visBounds) {
+  const mb = mapData.bounds, mw = mapData.canvas.width, mh = mapData.canvas.height;
+  const mbMercMax = latToMercY(mb.maxLat), mbMercMin = latToMercY(mb.minLat), mbMercR = mbMercMax - mbMercMin;
+
+  const sx = ((visBounds.minLon - mb.minLon) / (mb.maxLon - mb.minLon)) * mw;
+  const sy = ((mbMercMax - visBounds.mercMax) / mbMercR) * mh;
+  const sw = ((visBounds.maxLon - visBounds.minLon) / (mb.maxLon - mb.minLon)) * mw;
+  const sh = ((visBounds.mercMax - visBounds.mercMin) / mbMercR) * mh;
 
   ctx.drawImage(mapData.canvas, sx, sy, sw, sh, tx, ty, tw, th);
 }
@@ -666,25 +697,26 @@ const SIZES = {
   'poster-24x36': { w: 2400, h: 3600 }, 'poster-18x24': { w: 1800, h: 2400 },
   'poster-11x17': { w: 1100, h: 1700 }, 'square-12x12': { w: 1800, h: 1800 }, 'tshirt': { w: 1500, h: 1800 },
 };
-let flightData = null, flightStats = null, currentDesign = 'summit', currentSize = 'poster-18x24', mapCache = {};
+let flightData = null, flightStats = null, currentDesign = 'summit', currentSize = 'poster-18x24', mapCache = {}, isLandscape = false;
 let userText = { title: '', subtitle: '', showBottom: false, bottomHeading: '', bottomBody: '' };
+let displayStats = {};
 
 // ============================================================
 // SHARED DRAWING HELPERS
 // ============================================================
 function latToMercY(lat) {
-  return Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI / 180) / 2));
+  return (180 / Math.PI) * Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI / 180) / 2));
 }
-function projectPoints(points, bounds, x, y, w, h, padding) {
-  const px = padding || 0;
-  const lonR = (bounds.maxLon - bounds.minLon) || 0.001;
-  const mercMinY = latToMercY(bounds.minLat), mercMaxY = latToMercY(bounds.maxLat);
-  const mercR = mercMaxY - mercMinY || 0.001;
-  const fa = lonR / mercR, ba = (w - 2 * px) / (h - 2 * px);
-  let scale, ox, oy;
-  if (fa > ba) { scale = (w - 2 * px) / lonR; ox = x + px; oy = y + px + ((h - 2 * px) - mercR * scale) / 2; }
-  else { scale = (h - 2 * px) / mercR; ox = x + px + ((w - 2 * px) - lonR * scale) / 2; oy = y + px; }
-  return points.map(p => ({ x: ox + (p.lon - bounds.minLon) * scale, y: oy + (mercMaxY - latToMercY(p.lat)) * scale, alt: p.alt, time: p.time }));
+// Project points using visBounds (from computeVisBounds or standalone)
+function projectPoints(points, visBounds, x, y, w, h) {
+  const { minLon, maxLon, mercMin, mercMax } = visBounds;
+  const lonR = maxLon - minLon || 0.001;
+  const mercR = mercMax - mercMin || 0.001;
+  return points.map(p => ({
+    x: x + ((p.lon - minLon) / lonR) * w,
+    y: y + ((mercMax - latToMercY(p.lat)) / mercR) * h,
+    alt: p.alt, time: p.time
+  }));
 }
 function altColor(t, s) {
   if (s === 'warm') return `rgb(${Math.round(80+t*175)},${Math.round(40+t*80)},${Math.round(20+(1-t)*40)})`;
@@ -718,10 +750,11 @@ function drawStatsBar(ctx, W, y, h, stats, data, theme) {
   const dk = theme==='dark'||theme==='neon'||theme==='topo';
   ctx.strokeStyle = dk?'rgba(255,255,255,0.1)':'rgba(0,0,0,0.08)'; ctx.lineWidth = 1;
   ctx.beginPath(); ctx.moveTo(W*0.08, y); ctx.lineTo(W*0.92, y); ctx.stroke();
+  const ds = displayStats;
   const items = [
-    { l:'DISTANCE', v: stats.totalDist.toFixed(1)+' km' }, { l:'MAX ALT', v: stats.maxAlt+' m' },
-    { l:'CLIMB', v: stats.totalClimb+' m' }, { l:'MAX SPEED', v: stats.maxSpeed.toFixed(0)+' km/h' },
-    { l:'DURATION', v: stats.durationH+'h '+stats.durationM+'m' },
+    { l:'DISTANCE', v: ds.distance }, { l:'MAX ALT', v: ds.maxAlt },
+    { l:'CLIMB', v: ds.climb }, { l:'MAX SPEED', v: ds.maxSpeed },
+    { l:'DURATION', v: ds.duration },
   ];
   const cols = items.length, cw = (W*0.84)/cols, sx = W*0.08;
   const lc = theme==='neon'?'rgba(0,255,170,0.5)':theme==='topo'?'rgba(200,220,240,0.4)':dk?'rgba(255,255,255,0.4)':theme==='light-minimal'?'#bbb':'#a09080';
@@ -733,8 +766,9 @@ function drawStatsBar(ctx, W, y, h, stats, data, theme) {
     ctx.fillStyle = lc; ctx.font = `500 ${ls}px 'DM Sans', sans-serif`; ctx.fillText(it.l, cx, y + h*0.35);
     ctx.fillStyle = vc; ctx.font = `600 ${vs}px 'JetBrains Mono', monospace`; ctx.fillText(it.v, cx, y + h*0.65);
   });
-  if (data.pilotName || data.gliderType) {
-    const info = [data.pilotName, data.gliderType].filter(Boolean).join('  ·  ');
+  const pilot = ds.pilot, glider = ds.glider;
+  if (pilot || glider) {
+    const info = [pilot, glider].filter(Boolean).join('  ·  ');
     ctx.fillStyle = lc; ctx.font = `${Math.max(8, W*0.009)}px 'DM Sans', sans-serif`;
     ctx.textAlign = 'center'; ctx.fillText(info, W/2, y + h*0.88);
   }
@@ -840,7 +874,8 @@ function getSubtitle(stats) {
 
 function renderSummit(ctx, W, H, pts, stats, data, mapData) {
   ctx.fillStyle = '#0a0e17'; ctx.fillRect(0, 0, W, H);
-  if (mapData) { drawMapToCanvas(ctx, mapData, 0, 0, W, H, stats.bounds, 0.5); ctx.fillStyle='rgba(8,12,20,0.4)'; ctx.fillRect(0,0,W,H); }
+  var visBounds = computeVisBounds(stats.bounds, W, H, 0.5);
+  if (mapData) { drawMapForBounds(ctx, mapData, 0, 0, W, H, visBounds); ctx.fillStyle='rgba(8,12,20,0.4)'; ctx.fillRect(0,0,W,H); }
   const topF = ctx.createLinearGradient(0,0,0,H*0.14); topF.addColorStop(0,'rgba(10,14,23,0.95)'); topF.addColorStop(1,'transparent'); ctx.fillStyle=topF; ctx.fillRect(0,0,W,H*0.14);
   const botStart = userText.showBottom ? 0.68 : 0.72;
   const botF = ctx.createLinearGradient(0,H*botStart,0,H*(botStart+0.1)); botF.addColorStop(0,'transparent'); botF.addColorStop(1,'rgba(10,14,23,0.98)'); ctx.fillStyle=botF; ctx.fillRect(0,H*botStart,W,H*0.1);
@@ -853,7 +888,7 @@ function renderSummit(ctx, W, H, pts, stats, data, mapData) {
 
   const mapH = userText.showBottom ? 0.55 : 0.6;
   const fa = { x: W*0.06, y: H*0.1, w: W*0.88, h: H*mapH };
-  const proj = projectPoints(pts, stats.bounds, fa.x, fa.y, fa.w, fa.h, W*0.03);
+  const proj = projectPoints(pts, visBounds, 0, 0, W, H);
   const ar = stats.maxAlt - stats.minAlt || 1;
   ctx.save(); ctx.shadowBlur=W*0.01; ctx.shadowColor='rgba(232,93,58,0.5)'; ctx.strokeStyle='rgba(232,93,58,0.35)';
   ctx.lineWidth=W*0.006; ctx.lineCap='round'; ctx.lineJoin='round';
@@ -877,9 +912,10 @@ function renderCartograph(ctx, W, H, pts, stats, data, mapData) {
   const bg = ctx.createLinearGradient(0,0,W,H); bg.addColorStop(0,'#f5f0e8'); bg.addColorStop(0.5,'#ede7d9'); bg.addColorStop(1,'#e8e0d0'); ctx.fillStyle=bg; ctx.fillRect(0,0,W,H);
   const bm = W*0.04;
   const mapArea = { x: bm+4, y: H*0.1, w: W-2*bm-8, h: H*(userText.showBottom?0.54:0.6) };
+  var visBounds = computeVisBounds(stats.bounds, mapArea.w, mapArea.h, 0.25);
   if (mapData) {
     ctx.save(); ctx.beginPath(); ctx.rect(mapArea.x,mapArea.y,mapArea.w,mapArea.h); ctx.clip();
-    drawMapToCanvas(ctx,mapData,mapArea.x,mapArea.y,mapArea.w,mapArea.h,stats.bounds,0.25);
+    drawMapForBounds(ctx,mapData,mapArea.x,mapArea.y,mapArea.w,mapArea.h,visBounds);
     ctx.globalCompositeOperation='multiply'; ctx.fillStyle='rgba(230,215,185,0.35)'; ctx.fillRect(mapArea.x,mapArea.y,mapArea.w,mapArea.h);
     ctx.globalCompositeOperation='source-over'; ctx.fillStyle='rgba(180,160,120,0.08)'; ctx.fillRect(mapArea.x,mapArea.y,mapArea.w,mapArea.h); ctx.restore();
   }
@@ -895,7 +931,7 @@ function renderCartograph(ctx, W, H, pts, stats, data, mapData) {
   ctx.textAlign='right';
   for (let i=0;i<=4;i++) { const lat=stats.bounds.maxLat-(stats.bounds.maxLat-stats.bounds.minLat)*i/4; ctx.fillText(lat.toFixed(3)+'°',mapArea.x-W*0.008,mapArea.y+(mapArea.h/4)*i+4); }
 
-  const proj = projectPoints(pts,stats.bounds,mapArea.x,mapArea.y,mapArea.w,mapArea.h,W*0.03);
+  const proj = projectPoints(pts,visBounds,mapArea.x,mapArea.y,mapArea.w,mapArea.h);
   const ar = stats.maxAlt-stats.minAlt||1;
   ctx.strokeStyle='rgba(80,60,40,0.35)'; ctx.lineWidth=W*0.005; ctx.lineCap='round'; ctx.lineJoin='round';
   ctx.beginPath(); proj.forEach((p,i)=>i===0?ctx.moveTo(p.x+2,p.y+2):ctx.lineTo(p.x+2,p.y+2)); ctx.stroke();
@@ -925,7 +961,7 @@ function renderWhiteout(ctx, W, H, pts, stats, data) {
 
   const mapH = userText.showBottom ? 0.50 : 0.56;
   const ma = { x: m+W*0.02, y: H*0.14, w: W-2*m-W*0.04, h: H*mapH };
-  const proj = projectPoints(pts,stats.bounds,ma.x,ma.y,ma.w,ma.h,W*0.05);
+  const proj = projectPoints(pts,computeVisBounds(stats.bounds,ma.w,ma.h,0.15),ma.x,ma.y,ma.w,ma.h);
   const ar = stats.maxAlt-stats.minAlt||1;
   ctx.strokeStyle='#1a1a1a'; ctx.lineWidth=W*0.002; ctx.lineCap='round'; ctx.lineJoin='round';
   ctx.beginPath(); proj.forEach((p,i)=>i===0?ctx.moveTo(p.x,p.y):ctx.lineTo(p.x,p.y)); ctx.stroke();
@@ -947,7 +983,8 @@ function renderWhiteout(ctx, W, H, pts, stats, data) {
 
 function renderNeon(ctx, W, H, pts, stats, data, mapData) {
   ctx.fillStyle='#030306'; ctx.fillRect(0,0,W,H);
-  if (mapData) { drawMapToCanvas(ctx,mapData,0,0,W,H,stats.bounds,0.45); ctx.fillStyle='rgba(3,3,8,0.7)'; ctx.fillRect(0,0,W,H); }
+  var visBounds = computeVisBounds(stats.bounds, W, H, 0.45);
+  if (mapData) { drawMapForBounds(ctx,mapData,0,0,W,H,visBounds); ctx.fillStyle='rgba(3,3,8,0.7)'; ctx.fillRect(0,0,W,H); }
   const topF = ctx.createLinearGradient(0,0,0,H*0.14); topF.addColorStop(0,'rgba(3,3,6,0.95)'); topF.addColorStop(1,'transparent'); ctx.fillStyle=topF; ctx.fillRect(0,0,W,H*0.14);
   const botStart = userText.showBottom ? 0.68 : 0.72;
   const botF = ctx.createLinearGradient(0,H*botStart,0,H*(botStart+0.1)); botF.addColorStop(0,'transparent'); botF.addColorStop(1,'rgba(3,3,6,0.98)'); ctx.fillStyle=botF; ctx.fillRect(0,H*botStart,W,H*0.1);
@@ -960,7 +997,7 @@ function renderNeon(ctx, W, H, pts, stats, data, mapData) {
 
   const mapH = userText.showBottom ? 0.55 : 0.6;
   const fa = { x:W*0.06, y:H*0.1, w:W*0.88, h:H*mapH };
-  const proj = projectPoints(pts,stats.bounds,fa.x,fa.y,fa.w,fa.h,W*0.03);
+  const proj = projectPoints(pts,visBounds,0,0,W,H);
   const ar = stats.maxAlt-stats.minAlt||1;
   ctx.save(); ctx.shadowBlur=W*0.014;
   for (let i=1;i<proj.length;i++) { const t=(proj[i].alt-stats.minAlt)/ar; const c=altColor(t,'neon'); ctx.shadowColor=c; ctx.strokeStyle=c; ctx.lineWidth=W*0.005; ctx.lineCap='round'; ctx.beginPath(); ctx.moveTo(proj[i-1].x,proj[i-1].y); ctx.lineTo(proj[i].x,proj[i].y); ctx.stroke(); }
@@ -982,7 +1019,8 @@ function renderNeon(ctx, W, H, pts, stats, data, mapData) {
 
 function renderTopo(ctx, W, H, pts, stats, data, mapData) {
   ctx.fillStyle='#1a2332'; ctx.fillRect(0,0,W,H);
-  if (mapData) { drawMapToCanvas(ctx,mapData,0,0,W,H,stats.bounds,0.4); ctx.globalCompositeOperation='multiply'; ctx.fillStyle='rgba(35,55,95,0.75)'; ctx.fillRect(0,0,W,H); ctx.globalCompositeOperation='source-over'; ctx.fillStyle='rgba(20,30,45,0.3)'; ctx.fillRect(0,0,W,H); }
+  var visBounds = computeVisBounds(stats.bounds, W, H, 0.4);
+  if (mapData) { drawMapForBounds(ctx,mapData,0,0,W,H,visBounds); ctx.globalCompositeOperation='multiply'; ctx.fillStyle='rgba(35,55,95,0.75)'; ctx.fillRect(0,0,W,H); ctx.globalCompositeOperation='source-over'; ctx.fillStyle='rgba(20,30,45,0.3)'; ctx.fillRect(0,0,W,H); }
   drawTopoContours(ctx,0,0,W,H,'rgba(100,160,200,0.04)',0.5,20);
   const topF = ctx.createLinearGradient(0,0,0,H*0.13); topF.addColorStop(0,'rgba(26,35,50,0.95)'); topF.addColorStop(1,'transparent'); ctx.fillStyle=topF; ctx.fillRect(0,0,W,H*0.13);
   const botStart = userText.showBottom ? 0.68 : 0.72;
@@ -996,7 +1034,7 @@ function renderTopo(ctx, W, H, pts, stats, data, mapData) {
 
   const mapH = userText.showBottom ? 0.55 : 0.6;
   const fa = { x:W*0.06, y:H*0.1, w:W*0.88, h:H*mapH };
-  const proj = projectPoints(pts,stats.bounds,fa.x,fa.y,fa.w,fa.h,W*0.03);
+  const proj = projectPoints(pts,visBounds,0,0,W,H);
   const ar = stats.maxAlt-stats.minAlt||1;
   ctx.strokeStyle='rgba(0,0,0,0.45)'; ctx.lineWidth=W*0.006; ctx.lineCap='round'; ctx.lineJoin='round';
   ctx.beginPath(); proj.forEach((p,i)=>i===0?ctx.moveTo(p.x,p.y):ctx.lineTo(p.x,p.y)); ctx.stroke();
@@ -1023,7 +1061,10 @@ async function renderPoster() {
   if (!flightData) return;
   const canvas = document.getElementById('posterCanvas');
   const ctx = canvas.getContext('2d');
-  const size = SIZES[currentSize]; canvas.width = size.w; canvas.height = size.h;
+  const baseSize = SIZES[currentSize];
+  const canLandscape = currentSize !== 'square-12x12' && currentSize !== 'tshirt';
+  const size = (isLandscape && canLandscape) ? { w: baseSize.h, h: baseSize.w } : { w: baseSize.w, h: baseSize.h };
+  canvas.width = size.w; canvas.height = size.h;
   const design = DESIGNS.find(d => d.id === currentDesign);
   const { points } = flightData, stats = flightStats;
   let mapData = null;
@@ -1115,22 +1156,37 @@ function handleFile(file) {
     document.getElementById('bottomHeading').value = '';
     document.getElementById('bottomBody').value = '';
 
-    // Stats panel
+    // Stats panel — editable inputs
+    displayStats = {
+      distance: flightStats.totalDist.toFixed(1) + ' km',
+      maxAlt: flightStats.maxAlt + ' m',
+      minAlt: flightStats.minAlt + ' m',
+      climb: flightStats.totalClimb + ' m',
+      maxSpeed: flightStats.maxSpeed.toFixed(0) + ' km/h',
+      duration: flightStats.durationH + 'h ' + flightStats.durationM + 'm',
+      pilot: flightData.pilotName || '',
+      glider: flightData.gliderType || '',
+    };
     const sp = document.getElementById('statsPanel');
     sp.innerHTML = '';
-    [
-      { l: 'Distance', v: flightStats.totalDist.toFixed(1) + ' km' },
-      { l: 'Max Altitude', v: flightStats.maxAlt + ' m' },
-      { l: 'Min Altitude', v: flightStats.minAlt + ' m' },
-      { l: 'Total Climb', v: flightStats.totalClimb + ' m' },
-      { l: 'Max Speed', v: flightStats.maxSpeed.toFixed(0) + ' km/h' },
-      { l: 'Duration', v: flightStats.durationH + 'h ' + flightStats.durationM + 'm' },
-      { l: 'Pilot', v: flightData.pilotName || '—' },
-      { l: 'Glider', v: flightData.gliderType || '—' },
-    ].forEach(s => {
+    const statFields = [
+      { key: 'distance', label: 'Distance' },
+      { key: 'maxAlt', label: 'Max Altitude' },
+      { key: 'minAlt', label: 'Min Altitude' },
+      { key: 'climb', label: 'Total Climb' },
+      { key: 'maxSpeed', label: 'Max Speed' },
+      { key: 'duration', label: 'Duration' },
+      { key: 'pilot', label: 'Pilot' },
+      { key: 'glider', label: 'Glider' },
+    ];
+    statFields.forEach(s => {
       const row = document.createElement('div'); row.className = 'stat-row';
-      row.innerHTML = `<span class="s-label">${s.l}</span><span class="s-value">${s.v}</span>`;
-      sp.appendChild(row);
+      const label = document.createElement('span'); label.className = 's-label'; label.textContent = s.label;
+      const input = document.createElement('input'); input.className = 's-input';
+      input.value = displayStats[s.key];
+      input.placeholder = displayStats[s.key] || '—';
+      input.addEventListener('input', e => { displayStats[s.key] = e.target.value; queueRender(); });
+      row.appendChild(label); row.appendChild(input); sp.appendChild(row);
     });
 
     uploadZone.style.display = 'none';
@@ -1148,11 +1204,26 @@ uploadBox.addEventListener('dragover', e => { e.preventDefault(); uploadBox.clas
 uploadBox.addEventListener('dragleave', () => uploadBox.classList.remove('dragging'));
 uploadBox.addEventListener('drop', e => { e.preventDefault(); uploadBox.classList.remove('dragging'); if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); });
 
-document.getElementById('sizeSelect').addEventListener('change', e => { currentSize = e.target.value; renderPoster(); });
+document.getElementById('sizeSelect').addEventListener('change', e => {
+  currentSize = e.target.value;
+  const canLandscape = currentSize !== 'square-12x12' && currentSize !== 'tshirt';
+  const orientBtn = document.getElementById('orientBtn');
+  if (!canLandscape) { isLandscape = false; orientBtn.classList.remove('landscape'); orientBtn.textContent = '⇵ Portrait'; }
+  orientBtn.style.display = canLandscape ? 'block' : 'none';
+  renderPoster();
+});
+document.getElementById('orientBtn').addEventListener('click', () => {
+  isLandscape = !isLandscape;
+  const btn = document.getElementById('orientBtn');
+  btn.classList.toggle('landscape', isLandscape);
+  btn.textContent = isLandscape ? '⇵ Landscape' : '⇵ Portrait';
+  mapCache = {};
+  renderPoster();
+});
 document.getElementById('downloadBtn').addEventListener('click', () => {
   const canvas = document.getElementById('posterCanvas');
   const link = document.createElement('a');
-  link.download = `flight-poster-${currentDesign}-${currentSize}.png`;
+  link.download = `flight-poster-${currentDesign}-${currentSize}${isLandscape?'-landscape':''}.png`;
   link.href = canvas.toDataURL('image/png'); link.click();
 });
 document.getElementById('newFileBtn').addEventListener('click', () => {
@@ -1160,6 +1231,8 @@ document.getElementById('newFileBtn').addEventListener('click', () => {
   document.getElementById('downloadBar').classList.remove('active');
   uploadZone.style.display = 'flex';
   fileInput.value = ''; flightData = null; flightStats = null; mapCache = {};
+  isLandscape = false; document.getElementById('orientBtn').classList.remove('landscape');
+  document.getElementById('orientBtn').textContent = '⇵ Portrait'; document.getElementById('orientBtn').style.display = 'block';
 });
 
 // ============================================================
