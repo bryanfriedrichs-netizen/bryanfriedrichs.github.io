@@ -104,6 +104,23 @@
       padding-bottom: 0.5rem;
     }
 
+    /* Mountain Ridge Divider */
+    .ridge-divider {
+      width: 100%;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 2rem;
+    }
+
+    .ridge-divider canvas {
+      display: block;
+      width: 100%;
+      height: 60px;
+      border-top: 1px solid #2a2a2a;
+      border-bottom: 1px solid #2a2a2a;
+      background: #0f0f0f;
+    }
+
     /* Apps Grid */
     .apps-grid {
       display: grid;
@@ -294,6 +311,9 @@
     <div class="hero-overlay"></div>
   </section>
 
+  <!-- Ridge Divider 1 -->
+  <div class="ridge-divider"><canvas class="ridge-canvas"></canvas></div>
+
   <!-- Apps Section -->
   <section id="apps">
     <h3>Apps & Projects</h3>
@@ -339,6 +359,8 @@
     </div>
   </section>
 
+  <!-- Ridge Divider 2 -->
+  <div class="ridge-divider"><canvas class="ridge-canvas"></canvas></div>
 
   <!-- YouTube Section -->
   <section id="animations">
@@ -351,6 +373,9 @@
       </div>
     </div>
   </section>
+
+  <!-- Ridge Divider 3 -->
+  <div class="ridge-divider"><canvas class="ridge-canvas"></canvas></div>
 
   <!-- Contact Section -->
   <section id="contact">
@@ -380,5 +405,138 @@
   <footer>
     <p>&copy; 2026 Bryan Friedrichs. All rights reserved.</p>
   </footer>
+
+  <script>
+    // =============================================
+    // Generative Mountain Ridge Silhouette Dividers
+    // =============================================
+    // Each canvas gets a unique, random mountain ridge line drawing on every page load.
+    // Uses layered midpoint displacement for natural-looking ridgelines.
+
+    function generateRidge(width, numPoints, roughness, seed) {
+      // Seeded random for reproducibility within a single ridge
+      let s = seed;
+      function rand() {
+        s = (s * 16807 + 0) % 2147483647;
+        return (s & 0x7fffffff) / 0x7fffffff;
+      }
+
+      // Start with a few anchor points at varying heights
+      const anchors = 6 + Math.floor(rand() * 5);
+      let points = [];
+      for (let i = 0; i <= anchors; i++) {
+        const x = (i / anchors) * width;
+        // Heights cluster toward center, lower at edges for a natural ridge feel
+        const edgeFade = 1 - Math.pow((i / anchors - 0.5) * 2, 2) * 0.4;
+        const h = (0.25 + rand() * 0.5) * edgeFade;
+        points.push({ x, h });
+      }
+
+      // Midpoint displacement passes for fractal detail
+      for (let pass = 0; pass < 5; pass++) {
+        const newPoints = [points[0]];
+        const scale = roughness * Math.pow(0.5, pass);
+        for (let i = 0; i < points.length - 1; i++) {
+          const mid = {
+            x: (points[i].x + points[i + 1].x) / 2,
+            h: (points[i].h + points[i + 1].h) / 2 + (rand() - 0.5) * scale
+          };
+          mid.h = Math.max(0.05, Math.min(0.95, mid.h));
+          newPoints.push(mid);
+          newPoints.push(points[i + 1]);
+        }
+        points = newPoints;
+      }
+
+      // Resample to exact pixel width
+      const result = new Float32Array(numPoints);
+      for (let px = 0; px < numPoints; px++) {
+        const targetX = (px / (numPoints - 1)) * width;
+        // Find surrounding points
+        let lo = 0, hi = points.length - 1;
+        for (let j = 0; j < points.length - 1; j++) {
+          if (points[j].x <= targetX && points[j + 1].x >= targetX) {
+            lo = j; hi = j + 1; break;
+          }
+        }
+        const t = points[hi].x === points[lo].x ? 0 :
+          (targetX - points[lo].x) / (points[hi].x - points[lo].x);
+        result[px] = points[lo].h + (points[hi].h - points[lo].h) * t;
+      }
+      return result;
+    }
+
+    function drawRidgeCanvas(canvas) {
+      const dpr = window.devicePixelRatio || 1;
+      const rect = canvas.getBoundingClientRect();
+      const w = rect.width;
+      const h = rect.height;
+      canvas.width = w * dpr;
+      canvas.height = h * dpr;
+
+      const ctx = canvas.getContext('2d');
+      ctx.scale(dpr, dpr);
+
+      // Clear with background
+      ctx.fillStyle = '#0f0f0f';
+      ctx.fillRect(0, 0, w, h);
+
+      const seed = Math.floor(Math.random() * 2147483647);
+      const numPoints = Math.floor(w);
+
+      // Draw 3 layered ridges: back to front, darker to lighter
+      const layers = [
+        { roughness: 0.7, offsetY: 0.15, color: 'rgba(55, 58, 65, 0.6)', lineColor: 'rgba(100, 105, 115, 0.5)', fill: true },
+        { roughness: 0.8, offsetY: 0.05, color: 'rgba(45, 48, 55, 0.75)', lineColor: 'rgba(120, 125, 135, 0.6)', fill: true },
+        { roughness: 0.9, offsetY: -0.05, color: 'rgba(32, 34, 40, 0.85)', lineColor: 'rgba(150, 155, 168, 0.8)', fill: true },
+      ];
+
+      layers.forEach((layer, idx) => {
+        const ridge = generateRidge(w, numPoints, layer.roughness, seed + idx * 99991);
+        const baseY = h * 0.5;
+        const amplitude = h * 0.4;
+
+        // Filled silhouette
+        if (layer.fill) {
+          ctx.beginPath();
+          ctx.moveTo(0, h);
+          for (let i = 0; i < numPoints; i++) {
+            const x = i;
+            const y = baseY - ridge[i] * amplitude + layer.offsetY * h;
+            ctx.lineTo(x, y);
+          }
+          ctx.lineTo(w, h);
+          ctx.closePath();
+          ctx.fillStyle = layer.color;
+          ctx.fill();
+        }
+
+        // Ridge line on top
+        ctx.beginPath();
+        for (let i = 0; i < numPoints; i++) {
+          const x = i;
+          const y = baseY - ridge[i] * amplitude + layer.offsetY * h;
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.strokeStyle = layer.lineColor;
+        ctx.lineWidth = idx === 2 ? 1.5 : 0.8;
+        ctx.stroke();
+      });
+    }
+
+    // Initialize all ridge canvases
+    function initRidges() {
+      document.querySelectorAll('.ridge-canvas').forEach(drawRidgeCanvas);
+    }
+
+    // Draw on load and redraw on resize
+    initRidges();
+    let resizeTimer;
+    window.addEventListener('resize', () => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(initRidges, 150);
+    });
+  </script>
 </body>
 </html>
