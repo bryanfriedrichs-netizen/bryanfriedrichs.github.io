@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Portal 1</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #bf5a1a;
+      overflow: hidden;
+      height: 100vh;
+      width: 100vw;
+      cursor: crosshair;
+      font-family: monospace;
+    }
+    canvas {
+      display: block;
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+    }
+
+    /* DOS Dialog */
+    .dialog-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+    }
+    .dialog-overlay.active {
+      display: flex;
+    }
+    .dos-window {
+      background: #000080;
+      border: 3px solid #aaa;
+      box-shadow: 4px 4px 0 #000, inset 1px 1px 0 #ccc;
+      width: 560px;
+      max-width: 90vw;
+      font-family: 'Courier New', Courier, monospace;
+      color: #aaa;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+    .dos-titlebar {
+      background: #000;
+      color: #aaa;
+      padding: 2px 8px;
+      font-size: 12px;
+      display: flex;
+      justify-content: space-between;
+      border-bottom: 1px solid #555;
+    }
+    .dos-body {
+      padding: 16px;
+    }
+    .dos-body p {
+      margin-bottom: 8px;
+    }
+    .dos-prompt {
+      display: flex;
+      align-items: center;
+      margin-top: 12px;
+    }
+    .dos-prompt span {
+      color: #aaa;
+      margin-right: 4px;
+    }
+    .dos-input {
+      background: transparent;
+      border: none;
+      color: #fff;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 14px;
+      outline: none;
+      width: 40px;
+      caret-color: #aaa;
+    }
+    .dos-cursor {
+      display: inline-block;
+      width: 8px;
+      height: 14px;
+      background: #aaa;
+      animation: blink 0.6s step-end infinite;
+      vertical-align: middle;
+      margin-left: 2px;
+    }
+    @keyframes blink {
+      50% { opacity: 0; }
+    }
+
+    /* Flash effect */
+    .flash {
+      position: fixed;
+      inset: 0;
+      background: white;
+      z-index: 200;
+      display: none;
+      animation: flashAnim 0.4s ease-out forwards;
+    }
+    .flash.active { display: block; }
+    @keyframes flashAnim {
+      0% { opacity: 1; }
+      100% { opacity: 0; }
+    }
+    .flash.active {
+      animation-duration: 1.6s;
+    }
+
+    /* Blackout */
+    .blackout {
+      position: fixed;
+      inset: 0;
+      background: #000;
+      z-index: 300;
+      display: none;
+    }
+    .blackout.active { display: block; }
+  </style>
+</head>
+<body>
+  <canvas id="fractalCanvas"></canvas>
+
+  <div class="dialog-overlay" id="dialog">
+    <div class="dos-window">
+      <div class="dos-titlebar">
+        <span>C:\PORTAL\GATEWAY.EXE</span>
+        <span>[â–ˆ]</span>
+      </div>
+      <div class="dos-body">
+        <p>================================</p>
+        <p>&nbsp; What would you like to do?</p>
+        <p>================================</p>
+        <p>&nbsp; 1. Return to where you came from</p>
+        <p>&nbsp; 2. Return to whence you came from</p>
+        <p></p>
+        <div class="dos-prompt">
+          <span>C:\&gt;</span>
+          <input type="text" class="dos-input" id="dosInput" maxlength="1" autofocus>
+          <div class="dos-cursor" id="dosCursor"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="flash" id="flash"></div>
+  <div class="blackout" id="blackout"></div>
+
+  <script>
+    // =============================================
+    // FRACTAL GROWTH SYSTEM
+    // =============================================
+    const canvas = document.getElementById('fractalCanvas');
+    const ctx = canvas.getContext('2d');
+    let W, H;
+    let branches = [];
+    let animId;
+    let generation = 0;
+    let generationTimer = null;
+
+    function resize() {
+      const dpr = window.devicePixelRatio || 1;
+      W = window.innerWidth;
+      H = window.innerHeight;
+      canvas.width = W * dpr;
+      canvas.height = H * dpr;
+      ctx.scale(dpr, dpr);
+    }
+
+    function getHueForGeneration(gen) {
+      // Gen 0: ~25-55 (yellow-orange)
+      // Progressively shift toward green (~120) over generations
+      const baseHue = 30;
+      const targetHue = 140;
+      const t = Math.min(gen / 8, 1); // full green by gen 8
+      return baseHue + (targetHue - baseHue) * t;
+    }
+
+    function seedGeneration(gen) {
+      const hueCenter = getHueForGeneration(gen);
+      const numSeeds = 5 + Math.floor(Math.random() * 4);
+      for (let i = 0; i < numSeeds; i++) {
+        const angle = (Math.PI * 2 / numSeeds) * i + (Math.random() - 0.5) * 0.4;
+        branches.push({
+          x: W / 2,
+          y: H / 2,
+          angle: angle,
+          length: 0,
+          maxLength: 80 + Math.random() * 120,
+          speed: 0.6 + Math.random() * 0.8,
+          width: 3 + Math.random() * 3,
+          depth: 0,
+          maxDepth: 5 + Math.floor(Math.random() * 3),
+          hue: hueCenter + (Math.random() - 0.5) * 20,
+          spawned: false,
+          alpha: 0.8 + Math.random() * 0.2,
+          gen: gen,
+        });
+      }
+    }
+
+    function spawnChildren(branch) {
+      if (branch.depth >= branch.maxDepth) return;
+      const numChildren = 2 + Math.floor(Math.random() * 2);
+      const spread = 0.4 + Math.random() * 0.5;
+      for (let i = 0; i < numChildren; i++) {
+        const angleOff = (i - (numChildren - 1) / 2) * spread + (Math.random() - 0.5) * 0.3;
+        branches.push({
+          x: branch.x + Math.cos(branch.angle) * branch.length,
+          y: branch.y + Math.sin(branch.angle) * branch.length,
+          angle: branch.angle + angleOff,
+          length: 0,
+          maxLength: branch.maxLength * (0.55 + Math.random() * 0.2),
+          speed: branch.speed * (0.8 + Math.random() * 0.3),
+          width: Math.max(0.5, branch.width * 0.65),
+          depth: branch.depth + 1,
+          maxDepth: branch.maxDepth,
+          hue: branch.hue + (Math.random() - 0.5) * 10,
+          spawned: false,
+          alpha: branch.alpha * 0.85,
+          gen: branch.gen,
+        });
+      }
+    }
+
+    function drawFrame() {
+      // Very subtle fade so previous generations remain visible underneath
+      ctx.fillStyle = 'rgba(191, 90, 26, 0.012)';
+      ctx.fillRect(0, 0, W, H);
+
+      let activeCount = 0;
+
+      for (const b of branches) {
+        if (b.length < b.maxLength) {
+          b.length += b.speed;
+          activeCount++;
+        }
+
+        if (b.length >= b.maxLength && !b.spawned) {
+          b.spawned = true;
+          spawnChildren(b);
+        }
+
+        // Draw branch
+        const endX = b.x + Math.cos(b.angle) * b.length;
+        const endY = b.y + Math.sin(b.angle) * b.length;
+
+        const sat = 80 + b.depth * 5;
+        const light = 50 + b.depth * 4;
+        ctx.strokeStyle = `hsla(${b.hue}, ${sat}%, ${light}%, ${b.alpha})`;
+        ctx.lineWidth = b.width;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(b.x, b.y);
+        ctx.lineTo(endX, endY);
+        ctx.stroke();
+
+        // Glow on thicker branches
+        if (b.width > 1.5) {
+          ctx.shadowColor = `hsla(${b.hue}, 100%, 60%, 0.3)`;
+          ctx.shadowBlur = b.width * 3;
+          ctx.strokeStyle = `hsla(${b.hue}, 100%, 70%, ${b.alpha * 0.3})`;
+          ctx.lineWidth = b.width * 0.5;
+          ctx.beginPath();
+          ctx.moveTo(b.x, b.y);
+          ctx.lineTo(endX, endY);
+          ctx.stroke();
+          ctx.shadowBlur = 0;
+        }
+      }
+
+      animId = requestAnimationFrame(drawFrame);
+    }
+
+    function startNextGeneration() {
+      generation++;
+      // Prune old finished branches to keep performance reasonable
+      // Keep only branches from recent generations
+      if (branches.length > 4000) {
+        branches = branches.filter(b => b.gen >= generation - 2);
+      }
+      seedGeneration(generation);
+    }
+
+    function startGrowth() {
+      // Fill background first
+      ctx.fillStyle = '#bf5a1a';
+      ctx.fillRect(0, 0, W, H);
+      branches = [];
+      generation = 0;
+      seedGeneration(0);
+      if (animId) cancelAnimationFrame(animId);
+      animId = requestAnimationFrame(drawFrame);
+
+      // Schedule new generations that overlay on top
+      if (generationTimer) clearInterval(generationTimer);
+      generationTimer = setInterval(() => {
+        startNextGeneration();
+      }, 4000); // New generation every 4 seconds
+    }
+
+    // =============================================
+    // DIALOG SYSTEM
+    // =============================================
+    const dialog = document.getElementById('dialog');
+    const dosInput = document.getElementById('dosInput');
+    const dosCursor = document.getElementById('dosCursor');
+    const flash = document.getElementById('flash');
+    const blackout = document.getElementById('blackout');
+
+    canvas.addEventListener('click', () => {
+      dialog.classList.add('active');
+      dosInput.value = '';
+      dosInput.focus();
+    });
+
+    // Hide cursor when typing
+    dosInput.addEventListener('input', () => {
+      dosCursor.style.display = dosInput.value ? 'none' : 'inline-block';
+    });
+
+    dosInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        const val = dosInput.value.trim();
+        if (val === '1') {
+          // Return to main website
+          window.location.href = 'index.html';
+        } else if (val === '2') {
+          // Flash white then go black
+          dialog.classList.remove('active');
+          flash.classList.add('active');
+          setTimeout(() => {
+            flash.classList.remove('active');
+            blackout.classList.add('active');
+          }, 1600);
+        } else {
+          // Invalid input - clear and refocus
+          dosInput.value = '';
+          dosCursor.style.display = 'inline-block';
+        }
+      }
+      if (e.key === 'Escape') {
+        dialog.classList.remove('active');
+      }
+    });
+
+    // Keep focus on input when dialog is open
+    dialog.addEventListener('click', (e) => {
+      if (e.target === dialog) {
+        // Click outside closes dialog
+        dialog.classList.remove('active');
+      } else {
+        dosInput.focus();
+      }
+    });
+
+    // Init
+    window.addEventListener('resize', () => {
+      resize();
+      if (generationTimer) clearInterval(generationTimer);
+      startGrowth();
+    });
+    resize();
+    startGrowth();
+  </script>
+</body>
+</html>
