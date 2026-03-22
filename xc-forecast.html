@@ -1,0 +1,1533 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AK XC Forecast — Paragliding Sounding Analysis</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0a0b0f;
+      --surface: #12141a;
+      --surface2: #1a1d26;
+      --border: #252830;
+      --border-light: #32363f;
+      --text: #e0e2e8;
+      --text-muted: #8a8f9d;
+      --text-dim: #5a5f6d;
+      --accent-thermal: #f59e0b;
+      --accent-good: #22c55e;
+      --accent-caution: #f59e0b;
+      --accent-poor: #ef4444;
+      --accent-blue: #3b82f6;
+      --accent-cyan: #06b6d4;
+      --glow-good: rgba(34,197,94,0.15);
+      --glow-caution: rgba(245,158,11,0.15);
+      --glow-poor: rgba(239,68,68,0.15);
+    }
+
+    * { margin:0; padding:0; box-sizing:border-box; }
+
+    body {
+      font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      min-height: 100vh;
+    }
+
+    /* ── Header ── */
+    .app-header {
+      padding: 2rem 2rem 1rem;
+      max-width: 1280px;
+      margin: 0 auto;
+    }
+    .app-header h1 {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 1.5rem;
+      font-weight: 500;
+      letter-spacing: -0.02em;
+      color: #fff;
+      margin-bottom: 0.25rem;
+    }
+    .app-header h1 span { color: var(--accent-thermal); }
+    .app-header .subtitle {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      font-weight: 300;
+    }
+    .header-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      flex-wrap: wrap;
+      gap: 1rem;
+      margin-top: 1.5rem;
+      padding-bottom: 1.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .model-info {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.72rem;
+      color: var(--text-dim);
+      letter-spacing: 0.03em;
+    }
+    .model-info strong { color: var(--text-muted); font-weight: 500; }
+
+    /* ── Fetch Button ── */
+    .fetch-btn {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+      font-weight: 500;
+      padding: 0.65rem 1.8rem;
+      background: linear-gradient(135deg, var(--accent-thermal), #d97706);
+      color: #000;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.3s;
+      letter-spacing: 0.02em;
+      position: relative;
+      overflow: hidden;
+    }
+    .fetch-btn:hover { filter: brightness(1.15); transform: translateY(-1px); }
+    .fetch-btn:active { transform: translateY(0); }
+    .fetch-btn:disabled {
+      background: var(--surface2);
+      color: var(--text-dim);
+      cursor: not-allowed;
+      filter: none;
+      transform: none;
+    }
+    .fetch-btn .spinner {
+      display: inline-block;
+      width: 14px; height: 14px;
+      border: 2px solid rgba(0,0,0,0.2);
+      border-top-color: #000;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      vertical-align: middle;
+      margin-right: 6px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Status Bar ── */
+    .status-bar {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 0.75rem 2rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.72rem;
+      color: var(--text-dim);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .status-bar .dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--text-dim);
+    }
+    .status-bar .dot.live { background: var(--accent-good); box-shadow: 0 0 6px var(--accent-good); }
+    .status-bar .dot.loading { background: var(--accent-thermal); animation: pulse 1.2s ease infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+    /* ── Date Selector ── */
+    .date-selector {
+      display: flex;
+      gap: 0.5rem;
+      margin-top: 0.5rem;
+    }
+    .date-btn {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.75rem;
+      padding: 0.4rem 1rem;
+      background: var(--surface);
+      color: var(--text-muted);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .date-btn:hover { border-color: var(--text-dim); color: var(--text); }
+    .date-btn.active {
+      background: var(--surface2);
+      border-color: var(--accent-thermal);
+      color: var(--accent-thermal);
+    }
+
+    /* ── Cards Grid ── */
+    .cards-container {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 1.5rem 2rem 3rem;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(580px, 1fr));
+      gap: 1.5rem;
+    }
+    @media (max-width: 640px) {
+      .cards-container { grid-template-columns: 1fr; }
+    }
+
+    /* ── Site Card ── */
+    .site-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+      transition: border-color 0.3s, box-shadow 0.3s;
+    }
+    .site-card:hover { border-color: var(--border-light); }
+    .site-card.rating-good { box-shadow: inset 0 1px 0 var(--accent-good); }
+    .site-card.rating-caution { box-shadow: inset 0 1px 0 var(--accent-caution); }
+    .site-card.rating-poor { box-shadow: inset 0 1px 0 var(--accent-poor); }
+
+    /* Card Header */
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 1rem 1.25rem;
+      border-bottom: 1px solid var(--border);
+      cursor: pointer;
+      user-select: none;
+    }
+    .card-header:hover { background: rgba(255,255,255,0.02); }
+    .site-name-row { display: flex; align-items: center; gap: 0.75rem; }
+    .site-name {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.95rem;
+      font-weight: 500;
+      color: #fff;
+    }
+    .site-elev {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.65rem;
+      color: var(--text-dim);
+      background: var(--surface2);
+      padding: 2px 6px;
+      border-radius: 3px;
+    }
+
+    /* Rating Badge */
+    .rating-badge {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.7rem;
+      font-weight: 600;
+      padding: 0.3rem 0.75rem;
+      border-radius: 4px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    .rating-badge.good { background: rgba(34,197,94,0.15); color: var(--accent-good); }
+    .rating-badge.caution { background: rgba(245,158,11,0.15); color: var(--accent-caution); }
+    .rating-badge.poor { background: rgba(239,68,68,0.15); color: var(--accent-poor); }
+
+    /* Summary Row */
+    .summary-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+      gap: 0.5rem;
+      padding: 0.75rem 1.25rem;
+      background: var(--surface2);
+      border-bottom: 1px solid var(--border);
+    }
+    .summary-item { text-align: center; }
+    .summary-label {
+      font-size: 0.6rem;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-family: 'JetBrains Mono', monospace;
+      margin-bottom: 2px;
+    }
+    .summary-value {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: #fff;
+    }
+    .summary-value.good { color: var(--accent-good); }
+    .summary-value.caution { color: var(--accent-caution); }
+    .summary-value.poor { color: var(--accent-poor); }
+
+    /* Expandable Detail */
+    .card-detail {
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height 0.4s ease;
+    }
+    .card-detail.open { max-height: 2000px; }
+
+    .detail-inner { padding: 1rem 1.25rem; }
+
+    /* Sounding Chart */
+    .sounding-chart {
+      width: 100%;
+      height: 300px;
+      position: relative;
+      background: rgba(0,0,0,0.25);
+      border-radius: 6px;
+      overflow: hidden;
+      margin-bottom: 1rem;
+    }
+    .sounding-chart canvas {
+      width: 100%;
+      height: 100%;
+    }
+
+    /* Analysis Notes */
+    .analysis-notes {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.5rem;
+    }
+    @media (max-width: 480px) {
+      .analysis-notes { grid-template-columns: 1fr; }
+    }
+    .note-item {
+      background: rgba(0,0,0,0.2);
+      padding: 0.6rem 0.8rem;
+      border-radius: 4px;
+      border-left: 2px solid var(--border);
+    }
+    .note-item.positive { border-left-color: var(--accent-good); }
+    .note-item.negative { border-left-color: var(--accent-poor); }
+    .note-item.neutral { border-left-color: var(--accent-caution); }
+    .note-label {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.6rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-dim);
+      margin-bottom: 2px;
+    }
+    .note-value {
+      font-size: 0.8rem;
+      color: var(--text);
+    }
+
+    /* Toggle Arrow */
+    .toggle-arrow {
+      color: var(--text-dim);
+      transition: transform 0.3s;
+      font-size: 0.75rem;
+    }
+    .toggle-arrow.open { transform: rotate(180deg); }
+
+    /* Empty state */
+    .empty-state {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 4rem 2rem;
+      text-align: center;
+    }
+    .empty-state .icon {
+      font-size: 3rem;
+      margin-bottom: 1rem;
+      opacity: 0.4;
+    }
+    .empty-state p {
+      color: var(--text-dim);
+      font-size: 0.9rem;
+      max-width: 420px;
+      margin: 0 auto;
+    }
+
+    /* Hour selector */
+    .hour-selector {
+      display: flex;
+      gap: 3px;
+      flex-wrap: wrap;
+      margin-bottom: 1rem;
+    }
+    .hour-btn {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.65rem;
+      padding: 0.25rem 0.5rem;
+      background: var(--surface);
+      color: var(--text-dim);
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .hour-btn:hover { color: var(--text); border-color: var(--text-dim); }
+    .hour-btn.active { background: var(--accent-thermal); color: #000; border-color: var(--accent-thermal); }
+
+    /* Wind Barb Legend */
+    .wind-legend {
+      display: flex;
+      gap: 1rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.6rem;
+      color: var(--text-dim);
+      margin-top: 0.5rem;
+      justify-content: flex-end;
+    }
+
+    /* Back link */
+    .back-link {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.75rem;
+      color: var(--text-dim);
+      text-decoration: none;
+      transition: color 0.2s;
+    }
+    .back-link:hover { color: var(--text); }
+
+    /* Loading skeleton */
+    .skeleton-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      height: 160px;
+      position: relative;
+      overflow: hidden;
+    }
+    .skeleton-card::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.03), transparent);
+      animation: shimmer 1.5s infinite;
+    }
+    @keyframes shimmer { 0%{transform:translateX(-100%)} 100%{transform:translateX(100%)} }
+
+    /* Disclaimer */
+    .disclaimer {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 0 2rem 2rem;
+      font-size: 0.68rem;
+      color: var(--text-dim);
+      font-family: 'JetBrains Mono', monospace;
+      line-height: 1.5;
+      border-top: 1px solid var(--border);
+      padding-top: 1.5rem;
+    }
+  </style>
+</head>
+<body>
+
+<div class="app-header">
+  <a href="index.html" class="back-link">← bryanfriedrichs.org</a>
+  <h1>AK <span>XC</span> Forecast</h1>
+  <p class="subtitle">Sounding-based cross-country paragliding analysis for Southcentral Alaska</p>
+  <div class="header-row">
+    <div>
+      <div style="display:flex;gap:1.5rem;flex-wrap:wrap;align-items:flex-start;">
+        <div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:0.6rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:4px;">Forecast Date</div>
+          <div class="date-selector" id="dateSelector"></div>
+        </div>
+        <div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:0.6rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:4px;">Weather Model</div>
+          <div class="date-selector" id="modelSelector"></div>
+        </div>
+      </div>
+      <div class="model-info" id="modelInfo">
+        <strong>MODEL</strong> GFS via Open-Meteo &nbsp;|&nbsp; <strong>RESOLUTION</strong> 0.25° (~28km) &nbsp;|&nbsp; <strong>LEVELS</strong> 1000–400 hPa
+      </div>
+    </div>
+    <button class="fetch-btn" id="fetchBtn" onclick="fetchForecast()">Analyze Soundings</button>
+  </div>
+</div>
+
+<div class="status-bar" id="statusBar">
+  <div class="dot" id="statusDot"></div>
+  <span id="statusText">Ready — press Analyze Soundings to fetch tomorrow's forecast data</span>
+</div>
+
+<div id="content">
+  <div class="empty-state">
+    <div class="icon">🌤️</div>
+    <p>Select a forecast date and press <strong>Analyze Soundings</strong> to fetch GFS model data and evaluate XC potential at each site.</p>
+  </div>
+</div>
+
+<div class="disclaimer" id="disclaimer" style="display:none;">
+  ⚠ This tool interprets publicly available GFS model output for general paragliding interest only. It is not a substitute for official weather forecasts, qualified instruction, or personal judgment. Model data has limited resolution and cannot capture localized terrain effects. Always make your own go/no-go decision based on current conditions, your experience level, and site-specific knowledge. Flying is inherently risky — fly safe.
+</div>
+
+<script>
+// ================================================================
+// SITE DEFINITIONS
+// ================================================================
+const SITES = [
+  {
+    id: 'flattop',
+    name: 'Flattop',
+    subtitle: 'Anchorage',
+    lat: 61.089889,
+    lon: -149.668194,
+    elevFt: 3510,
+    elevM: 1070,
+    idealWindDir: [200, 300],   // W launch: 200°-300°
+    maxWind: 10,
+    dangerWindDir: [45, 150],   // NE/E/SE = severe rotor, especially with Turnagain Arm funneling
+    chugachFrontRange: true,    // Flag for east-wind-aloft caution
+    notes: 'AAW: Works best with light winds aloft, SW/W to 10 mph. Do NOT fly NE/E/SE — severe rotor from Peak 2. Wind can flip 180° during setup. Junction of Turnagain Arm and 3 valley systems creates convergent/divergent flows. Strong east winds aloft are especially dangerous here as they funnel through Turnagain Arm. Not historically a great XC departure but pilots are increasingly flying the front range north.'
+  },
+  {
+    id: 'switchbacks',
+    name: 'Switchbacks',
+    subtitle: 'Eagle River',
+    lat: 61.311639,
+    lon: -149.425889,
+    elevFt: 3800,
+    elevM: 1158,
+    idealWindDir: [180, 270],
+    maxWind: 12,
+    dangerWindDir: [45, 150],   // Strong east = severe turbulence along front range
+    chugachFrontRange: true,
+    notes: 'AAW: XC departure site — if XC is not for you, this site is probably not for you. Strong thermals off rock band below S-facing launch. Roughest part of Baldy-to-Nature Center XC run. Launch early season and early in the day. 1.1–1.5 mi hike via powerline cut from Lynx Way/Brownie Dr. Strong east winds aloft create dangerous conditions along the entire front range.'
+  },
+  {
+    id: 'baldy',
+    name: 'Baldy Towers',
+    subtitle: 'Eagle River',
+    lat: 61.336556,
+    lon: -149.513861,
+    elevFt: 4100,
+    elevM: 1250,
+    idealWindDir: [290, 340],   // W to NNW
+    maxWind: 12,
+    dangerWindDir: [45, 150],   // Strong east = severe turbulence along front range
+    chugachFrontRange: true,
+    notes: 'AAW: Arguably the best site in Anchorage. Primarily thermal, cloud base 7,000+ ft on good days. Ideal W to NNW (290°–340°), 0–12 mph. Mild south flow can aid the northern XC run to Bear Mtn/Knik River. Watch for rotors from Swiss Alps peak in N/NNW. Strong east winds aloft are dangerous along the entire front range. "Baldy Bubble" can produce flyable conditions when area is blown out. Former site of state XC records; numerous 60+ mi flights. Spring/early summer peak XC season.'
+  },
+  {
+    id: 'govpeak',
+    name: 'Government Peak',
+    subtitle: 'Hatcher Pass',
+    lat: 61.728611,
+    lon: -149.302389,
+    elevFt: 3886,
+    elevM: 1184,
+    idealWindDir: [140, 260],
+    maxWind: 12,
+    notes: 'Hatcher Pass area. Drive-up access from Gov\'t Peak parking. South-facing bowls above the valley floor. Subject to same overdevelopment and strong valley wind hazards as other Hatcher Pass sites. Site of the current Alaska state XC distance record (2022) — pilot flew east past Sheep Mountain and Eureka, landing near Tolsona. Three other near-record flights were also flown from this site the same year. Significant untapped XC potential, especially eastward, though rugged terrain limits some direction options.'
+  },
+  {
+    id: 'marmot',
+    name: 'Marmot Ridge',
+    subtitle: 'Hatcher Pass',
+    lat: 61.774778,
+    lon: -149.255306,
+    elevFt: 4500,
+    elevM: 1372,
+    idealWindDir: [140, 260],   // Bench: 140°-260°
+    maxWind: 12,
+    dangerWindDir: null,
+    notes: 'AAW: Thermal site enhanced by valley flow dividing on Marmot\'s face. Bench launch (S/SW, 140°–260°, max 12 mph) and Peak launch (lighter winds only, max 8 mph PG). MASSIVE OVERDEVELOPMENT HAZARD — CB clouds past 30,000 ft are common and can develop quickly above you. Strong afternoon valley winds can park you on approach. Do not land in parking lot — use tundra above. Watch for mixing/converging valley flows.'
+  },
+  {
+    id: 'sheep',
+    name: 'Sheep Mountain',
+    subtitle: 'Glenn Highway',
+    lat: 61.831472,
+    lon: -147.460889,
+    elevFt: 4200,
+    elevM: 1280,
+    idealWindDir: [120, 310],
+    maxWind: 10,
+    dangerWindDir: [330, 30],   // N winds = dangerous rotor above wind shadow
+    notes: 'AAW: Serious backcountry XC departure, 2 hrs from Anchorage on Glenn Hwy. SE-facing slopes get good early thermals. Capable of producing highest cloudbase in Alaska and wicked strong thermals. N winds create dangerous rotor not encountered until above wind shadow. Very strong valley winds on thermic days can make reaching LZ impossible downwind. Helicopter ops from lodge share airspace — communicate with lodge. 1.5 mi / 1,800 ft hike. P3 recommended.'
+  }
+];
+
+// Pressure levels to request (hPa) — covers surface to ~7km
+const P_LEVELS = [1000, 950, 925, 900, 850, 800, 750, 700, 650, 600, 550, 500, 450, 400];
+
+// ================================================================
+// MODEL DEFINITIONS
+// ================================================================
+const MODELS = {
+  gfs: {
+    id: 'gfs',
+    name: 'GFS',
+    endpoint: '/v1/gfs',
+    resolution: '0.25° (~28km)',
+    description: 'NOAA Global Forecast System — reliable global model, 16-day range',
+    forecastDays: 3,
+    levels: P_LEVELS,
+    updateFreq: '6 hours'
+  },
+  ecmwf: {
+    id: 'ecmwf',
+    name: 'ECMWF',
+    endpoint: '/v1/ecmwf',
+    resolution: '9km',
+    description: 'European Centre — widely considered the best global model, 15-day range',
+    forecastDays: 3,
+    levels: P_LEVELS,
+    updateFreq: '6 hours'
+  }
+};
+
+// ================================================================
+// STATE
+// ================================================================
+let forecastData = {};
+let selectedDate = 1; // 0=today, 1=tomorrow, 2=day after
+let selectedModel = 'gfs';
+let selectedHours = {}; // per-site selected hour index
+let expandedCards = {};
+
+// ================================================================
+// DATE SELECTOR
+// ================================================================
+function initDateSelector() {
+  const container = document.getElementById('dateSelector');
+  const now = new Date();
+  for (let d = 0; d < 3; d++) {
+    const date = new Date(now);
+    date.setDate(date.getDate() + d);
+    const btn = document.createElement('button');
+    btn.className = 'date-btn' + (d === selectedDate ? ' active' : '');
+    const label = d === 0 ? 'Today' : d === 1 ? 'Tomorrow' : date.toLocaleDateString('en-US', {weekday:'short', month:'short', day:'numeric'});
+    btn.textContent = label;
+    btn.onclick = () => {
+      selectedDate = d;
+      container.querySelectorAll('.date-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      // Warn if HRRR and day 2+
+      if (selectedModel === 'hrrr' && d >= 2) {
+        document.getElementById('statusText').textContent = 'Note: HRRR only forecasts 48h out — data may be limited for this date.';
+      }
+      if (Object.keys(forecastData).length > 0) renderCards();
+    };
+    container.appendChild(btn);
+  }
+}
+
+// ================================================================
+// MODEL SELECTOR
+// ================================================================
+function initModelSelector() {
+  const container = document.getElementById('modelSelector');
+  const modelKeys = Object.keys(MODELS);
+
+  modelKeys.forEach(key => {
+    const model = MODELS[key];
+    const btn = document.createElement('button');
+    btn.className = 'date-btn' + (key === selectedModel ? ' active' : '');
+    btn.textContent = model.name;
+    btn.title = model.description;
+    btn.onclick = () => {
+      selectedModel = key;
+      container.querySelectorAll('.date-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      updateModelInfo();
+      // Clear cached data since model changed
+      forecastData = {};
+      selectedHours = {};
+    };
+    container.appendChild(btn);
+  });
+}
+
+function updateModelInfo() {
+  const model = MODELS[selectedModel];
+  let info = `<strong>MODEL</strong> ${model.name} via Open-Meteo &nbsp;|&nbsp; <strong>RESOLUTION</strong> ${model.resolution} &nbsp;|&nbsp; <strong>LEVELS</strong> 1000–400 hPa &nbsp;|&nbsp; <strong>UPDATES</strong> Every ${model.updateFreq}`;
+  if (model.caveat) {
+    info += `<br><span style="color:var(--accent-caution);font-size:0.65rem;">⚠ ${model.caveat}</span>`;
+  }
+  document.getElementById('modelInfo').innerHTML = info;
+}
+
+// ================================================================
+// DATA FETCHING
+// ================================================================
+async function fetchForecast() {
+  const btn = document.getElementById('fetchBtn');
+  const statusDot = document.getElementById('statusDot');
+  const statusText = document.getElementById('statusText');
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Fetching…';
+  statusDot.className = 'dot loading';
+  statusText.textContent = `Requesting ${MODELS[selectedModel].name} pressure-level data from Open-Meteo…`;
+
+  // Show skeleton cards
+  const content = document.getElementById('content');
+  content.innerHTML = '<div class="cards-container">' +
+    SITES.map(() => '<div class="skeleton-card"></div>').join('') + '</div>';
+
+  let fetchErrors = [];
+
+  try {
+    // Fetch sequentially with delay to avoid Open-Meteo rate limits (429)
+    for (let i = 0; i < SITES.length; i++) {
+      const site = SITES[i];
+      statusText.textContent = `Fetching ${site.name} (${i + 1}/${SITES.length})…`;
+      
+      // Retry logic for rate limits
+      let attempts = 0;
+      let success = false;
+      while (attempts < 3) {
+        try {
+          const data = await fetchSiteData(site);
+          forecastData[site.id] = data;
+          success = true;
+          break;
+        } catch (e) {
+          if ((e.message.includes('429') || e.message.includes('400')) && attempts < 2) {
+            attempts++;
+            statusText.textContent = `Error on ${site.name} — retrying in ${attempts * 2}s…`;
+            await new Promise(r => setTimeout(r, attempts * 2000));
+          } else {
+            // Log error but continue with other sites
+            fetchErrors.push(`${site.name}: ${e.message}`);
+            break;
+          }
+        }
+      }
+      
+      // Small delay between requests to stay under rate limit
+      if (i < SITES.length - 1) {
+        await new Promise(r => setTimeout(r, 600));
+      }
+    }
+
+    const loadedCount = Object.keys(forecastData).length;
+    if (loadedCount === 0) {
+      throw new Error('No data loaded for any site. The selected model may not cover Alaska.');
+    }
+
+    statusDot.className = 'dot live';
+    const now = new Date();
+    let statusMsg = `Data loaded — ${MODELS[selectedModel].name} model run | Updated ${now.toLocaleTimeString('en-US', {hour:'numeric', minute:'2-digit'})}`;
+    if (fetchErrors.length > 0) {
+      statusMsg += ` | ⚠ ${fetchErrors.length} site(s) failed: ${fetchErrors.join('; ')}`;
+    }
+    statusText.textContent = statusMsg;
+
+    renderCards();
+    document.getElementById('disclaimer').style.display = 'block';
+
+  } catch (err) {
+    statusDot.className = 'dot';
+    statusText.textContent = `Error: ${err.message}`;
+    content.innerHTML = '<div class="empty-state"><div class="icon">⚠️</div><p>Failed to fetch forecast data. Check your internet connection and try again.</p></div>';
+  }
+
+  btn.disabled = false;
+  btn.innerHTML = 'Analyze Soundings';
+}
+
+async function fetchSiteData(site) {
+  const model = MODELS[selectedModel];
+
+  // Use model-specific pressure levels if defined, otherwise global P_LEVELS
+  const levels = model.levels || P_LEVELS;
+
+  // Build pressure-level variable list
+  const tempVars = levels.map(p => `temperature_${p}hPa`).join(',');
+  const dewVars = levels.map(p => `dewpoint_${p}hPa`).join(',');
+  const windVars = levels.map(p => `windspeed_${p}hPa`).join(',');
+  const wdirVars = levels.map(p => `winddirection_${p}hPa`).join(',');
+  const geoVars = levels.map(p => `geopotential_height_${p}hPa`).join(',');
+
+  // Build surface variables — some models don't have all vars
+  let surfaceVarsList = ['temperature_2m', 'dewpoint_2m', 'cloudcover', 'precipitation',
+    'windspeed_10m', 'winddirection_10m'];
+  
+  // CAPE is available on GFS and ECMWF, may not be on HRRR
+  if (!model.noLiftedIndex) {
+    surfaceVarsList.push('cape', 'lifted_index');
+  } else {
+    surfaceVarsList.push('cape');
+  }
+
+  const hourlyVars = [
+    surfaceVarsList.join(','),
+    tempVars, dewVars, windVars, wdirVars, geoVars
+  ].join(',');
+
+  const forecastDays = model.forecastDays;
+  const baseUrl = `https://api.open-meteo.com${model.endpoint}`;
+  const modelParam = model.modelParam || '';
+
+  const url = `${baseUrl}?latitude=${site.lat}&longitude=${site.lon}` +
+    `&hourly=${hourlyVars}` +
+    `&temperature_unit=fahrenheit&windspeed_unit=mph&timezone=America%2FAnchorage&forecast_days=${forecastDays}` +
+    modelParam;
+
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`API error for ${site.name} (${model.name}): ${resp.status}`);
+  return resp.json();
+}
+
+// ================================================================
+// WIND DIRECTION HELPERS
+// ================================================================
+function isWindInRange(dir, min, max) {
+  // Handle wrap-around (e.g. 330° to 30° for northerly winds)
+  dir = ((dir % 360) + 360) % 360;
+  if (min <= max) {
+    return dir >= min && dir <= max;
+  } else {
+    // Wraps around 0/360
+    return dir >= min || dir <= max;
+  }
+}
+
+function degToCompass(deg) {
+  const dirs = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+  return dirs[Math.round(((deg % 360) + 360) % 360 / 22.5) % 16];
+}
+
+// ================================================================
+// ANALYSIS ENGINE
+// ================================================================
+function analyzeSounding(siteData, site, hourIdx) {
+  const h = siteData.hourly;
+  const result = {
+    time: h.time[hourIdx],
+    surfaceTemp: h.temperature_2m[hourIdx],
+    surfaceDew: h.dewpoint_2m[hourIdx],
+    cloudCover: h.cloudcover[hourIdx],
+    precip: h.precipitation[hourIdx],
+    surfaceWind: h.windspeed_10m[hourIdx],
+    surfaceWindDir: h.winddirection_10m[hourIdx],
+    cape: h.cape ? h.cape[hourIdx] : null,
+    liftedIndex: h.lifted_index ? h.lifted_index[hourIdx] : null,
+    levels: [],
+    thermalTop: null,
+    cloudBase: null,
+    inversionAlt: null,
+    lapseRate: null,
+    rating: 'poor',
+    score: 0,
+    notes: []
+  };
+
+  // Build sounding profile — use model-specific levels
+  const modelLevels = MODELS[selectedModel].levels || P_LEVELS;
+  for (const p of modelLevels) {
+    const temp = h[`temperature_${p}hPa`] ? h[`temperature_${p}hPa`][hourIdx] : null;
+    const dew = h[`dewpoint_${p}hPa`] ? h[`dewpoint_${p}hPa`][hourIdx] : null;
+    const ws = h[`windspeed_${p}hPa`] ? h[`windspeed_${p}hPa`][hourIdx] : null;
+    const wd = h[`winddirection_${p}hPa`] ? h[`winddirection_${p}hPa`][hourIdx] : null;
+    const geo = h[`geopotential_height_${p}hPa`] ? h[`geopotential_height_${p}hPa`][hourIdx] : null;
+
+    if (temp !== null && geo !== null) {
+      result.levels.push({
+        pressure: p,
+        tempF: temp,
+        tempC: (temp - 32) * 5 / 9,
+        dewF: dew,
+        dewC: dew !== null ? (dew - 32) * 5 / 9 : null,
+        windSpd: ws,
+        windDir: wd,
+        altM: geo,
+        altFt: geo * 3.281
+      });
+    }
+  }
+
+  // Sort by altitude ascending
+  result.levels.sort((a, b) => a.altM - b.altM);
+
+  // Filter levels above site elevation
+  const levelsAboveSite = result.levels.filter(l => l.altM >= site.elevM - 200);
+
+  if (levelsAboveSite.length < 3) {
+    result.notes.push({ label: 'Data', text: 'Insufficient pressure levels above site', type: 'negative' });
+    return result;
+  }
+
+  // ── Lapse Rate (lowest 3km above site) ──
+  const low = levelsAboveSite[0];
+  const hiTarget = levelsAboveSite.find(l => l.altM >= low.altM + 2500) || levelsAboveSite[levelsAboveSite.length - 1];
+  const dAlt = (hiTarget.altM - low.altM) / 1000; // km
+  if (dAlt > 0) {
+    result.lapseRate = (low.tempC - hiTarget.tempC) / dAlt; // °C/km
+  }
+
+  // ── Thermal Top Estimate ──
+  // Follow dry adiabat (9.8°C/km) from surface temp up, find where it meets environmental temp
+  const surfTempC = (result.surfaceTemp - 32) * 5 / 9;
+  for (let i = 1; i < result.levels.length; i++) {
+    const altAboveSurface = (result.levels[i].altM - site.elevM) / 1000; // km
+    if (altAboveSurface < 0) continue;
+    const parcelTemp = surfTempC - 9.8 * altAboveSurface;
+    if (parcelTemp <= result.levels[i].tempC) {
+      // Interpolate
+      const prev = result.levels[i - 1];
+      const prevAltAbove = (prev.altM - site.elevM) / 1000;
+      const prevParcel = surfTempC - 9.8 * prevAltAbove;
+      const prevDiff = prevParcel - prev.tempC;
+      const curDiff = parcelTemp - result.levels[i].tempC;
+      const frac = prevDiff / (prevDiff - curDiff);
+      const thermalAltM = prev.altM + frac * (result.levels[i].altM - prev.altM);
+      result.thermalTop = { altM: thermalAltM, altFt: thermalAltM * 3.281, aglFt: (thermalAltM - site.elevM) * 3.281 };
+      break;
+    }
+  }
+
+  // ── Cloud Base (LCL estimate via dew point depression) ──
+  const dewDepC = surfTempC - ((result.surfaceDew - 32) * 5 / 9);
+  const lclAglM = dewDepC / 2.5 * 304.8; // rough: 400ft per 1°C spread, using 2.5°C/1000ft
+  result.cloudBase = {
+    altM: site.elevM + lclAglM,
+    altFt: (site.elevM + lclAglM) * 3.281,
+    aglFt: lclAglM * 3.281
+  };
+
+  // ── Inversion Detection ──
+  for (let i = 1; i < levelsAboveSite.length - 1; i++) {
+    const dT = levelsAboveSite[i + 1].tempC - levelsAboveSite[i].tempC;
+    const dZ = (levelsAboveSite[i + 1].altM - levelsAboveSite[i].altM) / 1000;
+    if (dZ > 0 && dT / dZ > -2) { // inversion or isothermal
+      result.inversionAlt = {
+        altM: levelsAboveSite[i].altM,
+        altFt: levelsAboveSite[i].altFt,
+        aglFt: (levelsAboveSite[i].altM - site.elevM) * 3.281
+      };
+      break;
+    }
+  }
+
+  // ── Wind at ridge height ──
+  const ridgeLevel = result.levels.find(l => l.altM >= site.elevM) || result.levels[0];
+
+  // ── Scoring ──
+  let score = 0;
+
+  // Lapse rate scoring (DALR=9.8, good thermals want >6)
+  if (result.lapseRate !== null) {
+    if (result.lapseRate >= 7.5) { score += 25; result.notes.push({ label: 'Lapse Rate', text: `${result.lapseRate.toFixed(1)}°C/km — steep, strong thermals likely`, type: 'positive' }); }
+    else if (result.lapseRate >= 6) { score += 15; result.notes.push({ label: 'Lapse Rate', text: `${result.lapseRate.toFixed(1)}°C/km — moderate instability`, type: 'neutral' }); }
+    else { score += 0; result.notes.push({ label: 'Lapse Rate', text: `${result.lapseRate.toFixed(1)}°C/km — weak/stable, limited thermals`, type: 'negative' }); }
+  }
+
+  // Thermal top scoring
+  if (result.thermalTop) {
+    if (result.thermalTop.aglFt > 4000) { score += 25; result.notes.push({ label: 'Thermal Top', text: `${Math.round(result.thermalTop.altFt).toLocaleString()} ft MSL (${Math.round(result.thermalTop.aglFt).toLocaleString()} AGL) — excellent climb potential`, type: 'positive' }); }
+    else if (result.thermalTop.aglFt > 2000) { score += 15; result.notes.push({ label: 'Thermal Top', text: `${Math.round(result.thermalTop.altFt).toLocaleString()} ft MSL (${Math.round(result.thermalTop.aglFt).toLocaleString()} AGL) — moderate height`, type: 'neutral' }); }
+    else { score += 5; result.notes.push({ label: 'Thermal Top', text: `${Math.round(result.thermalTop.altFt).toLocaleString()} ft MSL (${Math.round(result.thermalTop.aglFt).toLocaleString()} AGL) — low ceiling`, type: 'negative' }); }
+  } else {
+    result.notes.push({ label: 'Thermal Top', text: 'No convective potential detected', type: 'negative' });
+  }
+
+  // Wind scoring (ridge height)
+  if (ridgeLevel) {
+    const ws = ridgeLevel.windSpd || 0;
+    if (ws < 15) { score += 20; result.notes.push({ label: 'Ridge Wind', text: `${Math.round(ws)} mph at ${Math.round(ridgeLevel.altFt).toLocaleString()} ft — manageable`, type: 'positive' }); }
+    else if (ws < 25) { score += 10; result.notes.push({ label: 'Ridge Wind', text: `${Math.round(ws)} mph at ${Math.round(ridgeLevel.altFt).toLocaleString()} ft — moderate`, type: 'neutral' }); }
+    else { score += 0; result.notes.push({ label: 'Ridge Wind', text: `${Math.round(ws)} mph at ${Math.round(ridgeLevel.altFt).toLocaleString()} ft — too strong`, type: 'negative' }); }
+  }
+
+  // Wind DIRECTION scoring (site-specific from AAW guides)
+  const windDir = ridgeLevel ? ridgeLevel.windDir : result.surfaceWindDir;
+  if (windDir !== null && windDir !== undefined) {
+    const dirLabel = degToCompass(windDir);
+
+    // Check danger directions first
+    if (site.dangerWindDir && isWindInRange(windDir, site.dangerWindDir[0], site.dangerWindDir[1])) {
+      score -= 25;
+      result.notes.push({ label: 'Wind Direction ⚠', text: `${Math.round(windDir)}° (${dirLabel}) — DANGER direction for ${site.name} per AAW site guide. Expect rotor/severe turbulence.`, type: 'negative' });
+    }
+    // Check ideal directions
+    else if (site.idealWindDir && isWindInRange(windDir, site.idealWindDir[0], site.idealWindDir[1])) {
+      score += 10;
+      result.notes.push({ label: 'Wind Direction', text: `${Math.round(windDir)}° (${dirLabel}) — within ideal range for ${site.name}`, type: 'positive' });
+    }
+    // Not ideal but not dangerous
+    else if (site.idealWindDir) {
+      result.notes.push({ label: 'Wind Direction', text: `${Math.round(windDir)}° (${dirLabel}) — outside ideal range (${site.idealWindDir[0]}°–${site.idealWindDir[1]}°)`, type: 'neutral' });
+    }
+
+    // Site-specific max wind check
+    if (site.maxWind && (ridgeLevel?.windSpd || 0) > site.maxWind) {
+      score -= 10;
+      result.notes.push({ label: 'Site Max Wind', text: `${Math.round(ridgeLevel.windSpd)} mph exceeds AAW site max of ${site.maxWind} mph`, type: 'negative' });
+    }
+  }
+
+  // ── East Wind Aloft Check (Chugach front range sites) ──
+  // Strong east flow aloft is dangerous for Flattop, Switchbacks, and Baldy
+  // even when surface winds may look acceptable
+  if (site.chugachFrontRange) {
+    // Check mid-level winds (~700-850 hPa, roughly 5,000-10,000 ft) for easterly component
+    const midLevels = result.levels.filter(l => l.pressure >= 650 && l.pressure <= 850 && l.windDir !== null && l.windSpd !== null);
+    const strongEastAloft = midLevels.filter(l => isWindInRange(l.windDir, 45, 150) && l.windSpd > 15);
+
+    if (strongEastAloft.length > 0) {
+      const worstLevel = strongEastAloft.reduce((a, b) => a.windSpd > b.windSpd ? a : b);
+      score -= 20;
+      result.notes.push({
+        label: 'East Wind Aloft ⚠',
+        text: `${Math.round(worstLevel.windSpd)} mph from ${Math.round(worstLevel.windDir)}° (${degToCompass(worstLevel.windDir)}) at ${Math.round(worstLevel.altFt).toLocaleString()} ft — strong east flow aloft is dangerous along the entire Chugach front range. Expect severe turbulence and rotor.`,
+        type: 'negative'
+      });
+    } else {
+      // Also check for moderate east aloft (caution)
+      const moderateEastAloft = midLevels.filter(l => isWindInRange(l.windDir, 45, 150) && l.windSpd > 8);
+      if (moderateEastAloft.length > 0) {
+        const worstMod = moderateEastAloft.reduce((a, b) => a.windSpd > b.windSpd ? a : b);
+        score -= 5;
+        result.notes.push({
+          label: 'East Wind Aloft',
+          text: `${Math.round(worstMod.windSpd)} mph from ${degToCompass(worstMod.windDir)} at ${Math.round(worstMod.altFt).toLocaleString()} ft — moderate east component aloft, use caution along front range.`,
+          type: 'neutral'
+        });
+      }
+    }
+
+    // Additional check: surface-level east wind in Turnagain Arm area
+    // Surface east winds indicate the east flow is reaching the surface — extra dangerous
+    if (result.surfaceWindDir !== null && isWindInRange(result.surfaceWindDir, 60, 130) && result.surfaceWind > 10) {
+      score -= 15;
+      result.notes.push({
+        label: 'Surface East ⚠',
+        text: `${Math.round(result.surfaceWind)} mph from ${degToCompass(result.surfaceWindDir)} at surface — east winds reaching the surface indicate strong east flow through Turnagain Arm. Conditions likely blown out with severe gusts and rotor.`,
+        type: 'negative'
+      });
+    }
+  }
+
+  // Cloud cover scoring
+  if (result.cloudCover !== null) {
+    if (result.cloudCover < 40) { score += 15; result.notes.push({ label: 'Cloud Cover', text: `${Math.round(result.cloudCover)}% — good solar heating`, type: 'positive' }); }
+    else if (result.cloudCover < 70) { score += 8; result.notes.push({ label: 'Cloud Cover', text: `${Math.round(result.cloudCover)}% — partial, thermals possible`, type: 'neutral' }); }
+    else { score += 0; result.notes.push({ label: 'Cloud Cover', text: `${Math.round(result.cloudCover)}% — overcast, weak thermals`, type: 'negative' }); }
+  }
+
+  // Precipitation penalty
+  if (result.precip > 0.1) {
+    score -= 20;
+    result.notes.push({ label: 'Precip', text: `${result.precip.toFixed(1)} mm/hr — active precipitation`, type: 'negative' });
+  }
+
+  // CAPE bonus
+  if (result.cape !== null && result.cape > 100) {
+    score += 10;
+    result.notes.push({ label: 'CAPE', text: `${Math.round(result.cape)} J/kg — convective energy available`, type: 'positive' });
+  }
+
+  // Inversion info
+  if (result.inversionAlt) {
+    result.notes.push({ label: 'Inversion', text: `Detected at ~${Math.round(result.inversionAlt.altFt).toLocaleString()} ft MSL (${Math.round(result.inversionAlt.aglFt).toLocaleString()} AGL) — may cap thermals`, type: 'neutral' });
+  }
+
+  result.score = Math.max(0, Math.min(100, score));
+  if (result.score >= 60) result.rating = 'good';
+  else if (result.score >= 35) result.rating = 'caution';
+  else result.rating = 'poor';
+
+  return result;
+}
+
+// ================================================================
+// FIND BEST THERMAL HOURS
+// ================================================================
+function getBestHoursForDate(siteData, site, dateIdx) {
+  const h = siteData.hourly;
+  const targetDate = new Date();
+  targetDate.setDate(targetDate.getDate() + dateIdx);
+  const dateStr = targetDate.toISOString().slice(0, 10);
+
+  // Find hour indices for target date, thermal hours only (9am–7pm AKDT)
+  const validHours = [];
+  for (let i = 0; i < h.time.length; i++) {
+    if (h.time[i].startsWith(dateStr)) {
+      const hr = parseInt(h.time[i].slice(11, 13));
+      if (hr >= 9 && hr <= 19) {
+        validHours.push(i);
+      }
+    }
+  }
+  return validHours;
+}
+
+function findPeakHour(siteData, site, dateIdx) {
+  const hours = getBestHoursForDate(siteData, site, dateIdx);
+  if (hours.length === 0) return null;
+
+  let bestIdx = hours[0];
+  let bestScore = -999;
+
+  for (const idx of hours) {
+    const analysis = analyzeSounding(siteData, site, idx);
+    if (analysis.score > bestScore) {
+      bestScore = analysis.score;
+      bestIdx = idx;
+    }
+  }
+  return bestIdx;
+}
+
+// ================================================================
+// RENDER CARDS
+// ================================================================
+function renderCards() {
+  const content = document.getElementById('content');
+  let html = '<div class="cards-container">';
+
+  for (const site of SITES) {
+    const data = forecastData[site.id];
+    if (!data) continue;
+
+    const peakIdx = findPeakHour(data, site, selectedDate);
+    if (!selectedHours[site.id]) selectedHours[site.id] = peakIdx;
+    const hourIdx = selectedHours[site.id] || peakIdx;
+
+    if (hourIdx === null) {
+      html += `<div class="site-card">
+        <div class="card-header">
+          <div class="site-name-row">
+            <span class="site-name">${site.name}</span>
+            <span class="site-elev">${site.elevFt.toLocaleString()} ft</span>
+          </div>
+          <span class="rating-badge poor">NO DATA</span>
+        </div>
+      </div>`;
+      continue;
+    }
+
+    const analysis = analyzeSounding(data, site, hourIdx);
+    const hours = getBestHoursForDate(data, site, selectedDate);
+    const isOpen = expandedCards[site.id] || false;
+
+    const ratingLabel = analysis.rating === 'good' ? 'XC Potential' :
+                        analysis.rating === 'caution' ? 'Marginal' : 'Unlikely';
+
+    html += `<div class="site-card rating-${analysis.rating}">
+      <div class="card-header" onclick="toggleCard('${site.id}')">
+        <div class="site-name-row">
+          <span class="site-name">${site.name}</span>
+          <span class="site-elev">${site.elevFt.toLocaleString()} ft</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:0.75rem;">
+          <span class="rating-badge ${analysis.rating}">${ratingLabel} ${analysis.score}/100</span>
+          <span class="toggle-arrow ${isOpen ? 'open' : ''}">▼</span>
+        </div>
+      </div>
+
+      <div class="summary-row">
+        <div class="summary-item">
+          <div class="summary-label">Thermal Top</div>
+          <div class="summary-value ${analysis.thermalTop && analysis.thermalTop.aglFt > 3000 ? 'good' : analysis.thermalTop && analysis.thermalTop.aglFt > 1500 ? 'caution' : 'poor'}">${analysis.thermalTop ? Math.round(analysis.thermalTop.aglFt).toLocaleString() + ' AGL' : '—'}</div>
+        </div>
+        <div class="summary-item">
+          <div class="summary-label">Cloud Base</div>
+          <div class="summary-value">${analysis.cloudBase ? Math.round(analysis.cloudBase.aglFt).toLocaleString() + ' AGL' : '—'}</div>
+        </div>
+        <div class="summary-item">
+          <div class="summary-label">Lapse Rate</div>
+          <div class="summary-value ${analysis.lapseRate >= 7.5 ? 'good' : analysis.lapseRate >= 6 ? 'caution' : 'poor'}">${analysis.lapseRate ? analysis.lapseRate.toFixed(1) + '°/km' : '—'}</div>
+        </div>
+        <div class="summary-item">
+          <div class="summary-label">Ridge Wind</div>
+          <div class="summary-value ${analysis.surfaceWind < 15 ? 'good' : analysis.surfaceWind < 25 ? 'caution' : 'poor'}">${Math.round(analysis.surfaceWind)} mph</div>
+        </div>
+        <div class="summary-item">
+          <div class="summary-label">Wind Dir</div>
+          <div class="summary-value ${site.dangerWindDir && isWindInRange(analysis.surfaceWindDir, site.dangerWindDir[0], site.dangerWindDir[1]) ? 'poor' : site.idealWindDir && isWindInRange(analysis.surfaceWindDir, site.idealWindDir[0], site.idealWindDir[1]) ? 'good' : 'caution'}">${analysis.surfaceWindDir !== null ? degToCompass(analysis.surfaceWindDir) + ' ' + Math.round(analysis.surfaceWindDir) + '°' : '—'}</div>
+        </div>
+        <div class="summary-item">
+          <div class="summary-label">Cloud %</div>
+          <div class="summary-value ${analysis.cloudCover < 40 ? 'good' : analysis.cloudCover < 70 ? 'caution' : 'poor'}">${Math.round(analysis.cloudCover)}%</div>
+        </div>
+        <div class="summary-item">
+          <div class="summary-label">CAPE</div>
+          <div class="summary-value ${analysis.cape > 100 ? 'good' : 'caution'}">${analysis.cape !== null ? Math.round(analysis.cape) : '—'}</div>
+        </div>
+      </div>
+
+      <div class="card-detail ${isOpen ? 'open' : ''}" id="detail-${site.id}">
+        <div class="detail-inner">
+          <div class="hour-selector" id="hours-${site.id}">
+            ${hours.map(hi => {
+              const hr = parseInt(data.hourly.time[hi].slice(11, 13));
+              const ampm = hr >= 12 ? 'pm' : 'am';
+              const h12 = hr > 12 ? hr - 12 : hr === 0 ? 12 : hr;
+              return `<button class="hour-btn ${hi === hourIdx ? 'active' : ''}" onclick="selectHour('${site.id}', ${hi})">${h12}${ampm}</button>`;
+            }).join('')}
+          </div>
+
+          <div class="sounding-chart" id="chart-${site.id}">
+            <canvas id="canvas-${site.id}"></canvas>
+          </div>
+
+          <div class="analysis-notes">
+            ${analysis.notes.map(n => `
+              <div class="note-item ${n.type}">
+                <div class="note-label">${n.label}</div>
+                <div class="note-value">${n.text}</div>
+              </div>
+            `).join('')}
+          </div>
+
+          <div style="margin-top:0.75rem; font-size:0.7rem; color:var(--text-dim); font-style:italic;">
+            ${site.notes}
+          </div>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  html += '</div>';
+  content.innerHTML = html;
+
+  // Draw sounding charts for expanded cards
+  for (const site of SITES) {
+    if (expandedCards[site.id]) {
+      drawSoundingChart(site);
+    }
+  }
+}
+
+function toggleCard(siteId) {
+  expandedCards[siteId] = !expandedCards[siteId];
+  const detail = document.getElementById(`detail-${siteId}`);
+  const arrow = detail?.previousElementSibling?.previousElementSibling?.querySelector('.toggle-arrow') ||
+    document.querySelector(`.site-card .card-header .toggle-arrow`);
+
+  if (detail) {
+    detail.classList.toggle('open');
+  }
+  // Re-render to draw chart
+  renderCards();
+}
+
+function selectHour(siteId, hourIdx) {
+  selectedHours[siteId] = hourIdx;
+  renderCards();
+}
+
+// ================================================================
+// SOUNDING CHART DRAWING
+// ================================================================
+function drawSoundingChart(site) {
+  const data = forecastData[site.id];
+  if (!data) return;
+  const hourIdx = selectedHours[site.id];
+  if (hourIdx === undefined || hourIdx === null) return;
+
+  const canvas = document.getElementById(`canvas-${site.id}`);
+  if (!canvas) return;
+
+  const container = canvas.parentElement;
+  const dpr = window.devicePixelRatio || 1;
+  const w = container.clientWidth;
+  const h = container.clientHeight;
+  canvas.width = w * dpr;
+  canvas.height = h * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+
+  const analysis = analyzeSounding(data, site, hourIdx);
+  const levels = analysis.levels.filter(l => l.altM >= 0);
+
+  if (levels.length < 2) return;
+
+  // Chart margins
+  const margin = { top: 25, right: 80, bottom: 35, left: 55 };
+  const cw = w - margin.left - margin.right;
+  const ch = h - margin.top - margin.bottom;
+
+  // Temperature range
+  const allTemps = levels.flatMap(l => [l.tempF, l.dewF].filter(t => t !== null));
+  const tMin = Math.floor(Math.min(...allTemps) / 10) * 10 - 5;
+  const tMax = Math.ceil(Math.max(...allTemps) / 10) * 10 + 5;
+
+  // Altitude range
+  const aMin = Math.max(0, levels[0].altFt - 500);
+  const aMax = levels[levels.length - 1].altFt + 500;
+
+  function xPos(tempF) { return margin.left + ((tempF - tMin) / (tMax - tMin)) * cw; }
+  function yPos(altFt) { return margin.top + ch - ((altFt - aMin) / (aMax - aMin)) * ch; }
+
+  // ── Background ──
+  ctx.fillStyle = 'rgba(8,10,16,0.95)';
+  ctx.fillRect(0, 0, w, h);
+
+  // ── Grid ──
+  ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+  ctx.lineWidth = 0.5;
+
+  // Temperature grid
+  for (let t = tMin; t <= tMax; t += 10) {
+    ctx.beginPath();
+    ctx.moveTo(xPos(t), margin.top);
+    ctx.lineTo(xPos(t), margin.top + ch);
+    ctx.stroke();
+
+    ctx.fillStyle = 'rgba(255,255,255,0.25)';
+    ctx.font = '10px JetBrains Mono, monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(`${t}°`, xPos(t), margin.top + ch + 14);
+  }
+  // Label
+  ctx.fillStyle = 'rgba(255,255,255,0.2)';
+  ctx.font = '9px JetBrains Mono, monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('Temperature (°F)', margin.left + cw / 2, h - 3);
+
+  // Altitude grid
+  const altStep = (aMax - aMin) > 20000 ? 5000 : (aMax - aMin) > 10000 ? 2000 : 1000;
+  for (let a = Math.ceil(aMin / altStep) * altStep; a <= aMax; a += altStep) {
+    ctx.beginPath();
+    ctx.moveTo(margin.left, yPos(a));
+    ctx.lineTo(margin.left + cw, yPos(a));
+    ctx.stroke();
+
+    ctx.fillStyle = 'rgba(255,255,255,0.25)';
+    ctx.font = '10px JetBrains Mono, monospace';
+    ctx.textAlign = 'right';
+    ctx.fillText(`${(a/1000).toFixed(a >= 10000 ? 0 : 1)}k`, margin.left - 6, yPos(a) + 3);
+  }
+  // Altitude label
+  ctx.save();
+  ctx.translate(12, margin.top + ch / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.fillStyle = 'rgba(255,255,255,0.2)';
+  ctx.font = '9px JetBrains Mono, monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('Altitude (ft MSL)', 0, 0);
+  ctx.restore();
+
+  // ── Freezing line ──
+  const freezeX = xPos(32);
+  if (freezeX > margin.left && freezeX < margin.left + cw) {
+    ctx.strokeStyle = 'rgba(100,180,255,0.2)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(freezeX, margin.top);
+    ctx.lineTo(freezeX, margin.top + ch);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(100,180,255,0.3)';
+    ctx.font = '8px JetBrains Mono, monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText('32°F', freezeX + 3, margin.top + 10);
+  }
+
+  // ── Site elevation line ──
+  const siteY = yPos(site.elevFt);
+  if (siteY > margin.top && siteY < margin.top + ch) {
+    ctx.strokeStyle = 'rgba(245,158,11,0.3)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 5]);
+    ctx.beginPath();
+    ctx.moveTo(margin.left, siteY);
+    ctx.lineTo(margin.left + cw, siteY);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(245,158,11,0.5)';
+    ctx.font = '8px JetBrains Mono, monospace';
+    ctx.textAlign = 'right';
+    ctx.fillText(`▲ ${site.name} ${site.elevFt.toLocaleString()}ft`, margin.left + cw, siteY - 4);
+  }
+
+  // ── Thermal top line ──
+  if (analysis.thermalTop) {
+    const ttY = yPos(analysis.thermalTop.altFt);
+    if (ttY > margin.top && ttY < margin.top + ch) {
+      ctx.strokeStyle = 'rgba(34,197,94,0.4)';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([6, 3]);
+      ctx.beginPath();
+      ctx.moveTo(margin.left, ttY);
+      ctx.lineTo(margin.left + cw, ttY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = 'rgba(34,197,94,0.7)';
+      ctx.font = '8px JetBrains Mono, monospace';
+      ctx.textAlign = 'left';
+      ctx.fillText(`⬆ Thermal Top ~${Math.round(analysis.thermalTop.altFt).toLocaleString()}ft`, margin.left + 4, ttY - 4);
+    }
+  }
+
+  // ── Cloud base line ──
+  if (analysis.cloudBase) {
+    const cbY = yPos(analysis.cloudBase.altFt);
+    if (cbY > margin.top && cbY < margin.top + ch) {
+      ctx.strokeStyle = 'rgba(148,163,184,0.3)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([2, 4]);
+      ctx.beginPath();
+      ctx.moveTo(margin.left, cbY);
+      ctx.lineTo(margin.left + cw, cbY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = 'rgba(148,163,184,0.5)';
+      ctx.font = '8px JetBrains Mono, monospace';
+      ctx.textAlign = 'left';
+      ctx.fillText(`☁ Cloud Base ~${Math.round(analysis.cloudBase.altFt).toLocaleString()}ft`, margin.left + 4, cbY - 4);
+    }
+  }
+
+  // ── Dry Adiabat from surface ──
+  const surfTempC = (analysis.surfaceTemp - 32) * 5 / 9;
+  ctx.strokeStyle = 'rgba(245,158,11,0.15)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let alt = site.elevFt; alt <= aMax; alt += 200) {
+    const altAboveM = (alt - site.elevFt) / 3.281;
+    const parcelC = surfTempC - 9.8 * (altAboveM / 1000);
+    const parcelF = parcelC * 9 / 5 + 32;
+    const x = xPos(parcelF);
+    const y = yPos(alt);
+    if (alt === site.elevFt) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // ── Temperature Line ──
+  ctx.strokeStyle = '#ef4444';
+  ctx.lineWidth = 2.5;
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+  levels.forEach((l, i) => {
+    const x = xPos(l.tempF);
+    const y = yPos(l.altFt);
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+
+  // Temperature dots
+  levels.forEach(l => {
+    ctx.fillStyle = '#ef4444';
+    ctx.beginPath();
+    ctx.arc(xPos(l.tempF), yPos(l.altFt), 2.5, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  // ── Dewpoint Line ──
+  const dewLevels = levels.filter(l => l.dewF !== null);
+  if (dewLevels.length > 1) {
+    ctx.strokeStyle = '#22c55e';
+    ctx.lineWidth = 2;
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    dewLevels.forEach((l, i) => {
+      const x = xPos(l.dewF);
+      const y = yPos(l.altFt);
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+
+    dewLevels.forEach(l => {
+      ctx.fillStyle = '#22c55e';
+      ctx.beginPath();
+      ctx.arc(xPos(l.dewF), yPos(l.altFt), 2, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  }
+
+  // ── Wind Barbs (right margin) ──
+  const barbX = margin.left + cw + 35;
+  levels.forEach(l => {
+    if (l.windSpd === null) return;
+    const y = yPos(l.altFt);
+    if (y < margin.top || y > margin.top + ch) return;
+
+    const dir = (l.windDir || 0) * Math.PI / 180;
+    const len = 22;
+    const spd = l.windSpd;
+
+    ctx.save();
+    ctx.translate(barbX, y);
+    ctx.rotate(dir + Math.PI); // wind FROM direction
+
+    // Staff
+    ctx.strokeStyle = 'rgba(100,180,255,0.6)';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(0, -len);
+    ctx.stroke();
+
+    // Barbs
+    let remaining = spd;
+    let pos = -len;
+    const barbLen = 8;
+
+    // Flags (50 mph)
+    while (remaining >= 50) {
+      ctx.fillStyle = 'rgba(100,180,255,0.6)';
+      ctx.beginPath();
+      ctx.moveTo(0, pos);
+      ctx.lineTo(barbLen, pos + 3);
+      ctx.lineTo(0, pos + 6);
+      ctx.closePath();
+      ctx.fill();
+      pos += 7;
+      remaining -= 50;
+    }
+
+    // Full barbs (10 mph)
+    while (remaining >= 10) {
+      ctx.beginPath();
+      ctx.moveTo(0, pos);
+      ctx.lineTo(barbLen, pos + 3);
+      ctx.stroke();
+      pos += 4;
+      remaining -= 10;
+    }
+
+    // Half barbs (5 mph)
+    if (remaining >= 5) {
+      ctx.beginPath();
+      ctx.moveTo(0, pos);
+      ctx.lineTo(barbLen * 0.5, pos + 2);
+      ctx.stroke();
+    }
+
+    ctx.restore();
+
+    // Speed label
+    ctx.fillStyle = 'rgba(100,180,255,0.4)';
+    ctx.font = '8px JetBrains Mono, monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText(`${Math.round(spd)}`, barbX + 16, y + 3);
+  });
+
+  // ── Legend ──
+  const legY = margin.top + 6;
+  ctx.font = '9px JetBrains Mono, monospace';
+
+  ctx.fillStyle = '#ef4444';
+  ctx.fillRect(margin.left + 4, legY - 4, 14, 2);
+  ctx.fillStyle = 'rgba(255,255,255,0.5)';
+  ctx.textAlign = 'left';
+  ctx.fillText('Temp', margin.left + 22, legY);
+
+  ctx.fillStyle = '#22c55e';
+  ctx.fillRect(margin.left + 62, legY - 4, 14, 2);
+  ctx.fillStyle = 'rgba(255,255,255,0.5)';
+  ctx.fillText('Dewpoint', margin.left + 80, legY);
+
+  ctx.fillStyle = 'rgba(245,158,11,0.3)';
+  ctx.fillRect(margin.left + 145, legY - 4, 14, 2);
+  ctx.fillStyle = 'rgba(255,255,255,0.5)';
+  ctx.fillText('Dry Adiabat', margin.left + 163, legY);
+
+  // Title
+  const timeStr = data.hourly.time[hourIdx];
+  const hr = parseInt(timeStr.slice(11, 13));
+  const ampm = hr >= 12 ? 'PM' : 'AM';
+  const h12 = hr > 12 ? hr - 12 : hr === 0 ? 12 : hr;
+  ctx.fillStyle = 'rgba(255,255,255,0.4)';
+  ctx.font = '10px JetBrains Mono, monospace';
+  ctx.textAlign = 'right';
+  ctx.fillText(`${MODELS[selectedModel].name} | ${timeStr.slice(0,10)} ${h12}:00 ${ampm} AKDT`, margin.left + cw, legY);
+}
+
+// ================================================================
+// INIT
+// ================================================================
+initDateSelector();
+initModelSelector();
+updateModelInfo();
+</script>
+</body>
+</html>
