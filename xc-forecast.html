@@ -908,6 +908,37 @@ function analyzeSounding(siteData, site, hourIdx) {
     aglFt: lclAglM * 3.281
   };
 
+  // ── Usable Ceiling ──
+  // The flyable thermal ceiling is the lower of thermal top and cloud base.
+  // If thermal top > cloud base, it's a Cu day — cloud base is the limit.
+  // If thermal top < cloud base, it's a blue day — thermal top is the limit.
+  result.ceiling = null;
+  result.ceilingType = null; // 'blue' = thermal top limited, 'cu' = cloud base limited
+
+  if (result.thermalTop && result.thermalTop.aglFt > 0) {
+    if (result.cloudBase && result.thermalTop.altFt > result.cloudBase.altFt) {
+      // Cu day — cloud base is the usable ceiling
+      result.ceiling = {
+        altM: result.cloudBase.altM,
+        altFt: result.cloudBase.altFt,
+        aglFt: result.cloudBase.aglFt
+      };
+      result.ceilingType = 'cu';
+    } else {
+      // Blue day — thermal top is the ceiling
+      result.ceiling = {
+        altM: result.thermalTop.altM,
+        altFt: result.thermalTop.altFt,
+        aglFt: result.thermalTop.aglFt
+      };
+      result.ceilingType = 'blue';
+    }
+  } else if (result.thermalTop) {
+    // Thermal top below launch
+    result.ceiling = result.thermalTop;
+    result.ceilingType = 'stable';
+  }
+
   // ── Inversion Detection (all layers, not just first) ──
   result.inversions = [];
   for (let i = 0; i < result.levels.length - 1; i++) {
@@ -1009,24 +1040,41 @@ function analyzeSounding(siteData, site, hourIdx) {
     else { score += 0; result.notes.push({ label: 'Lapse Rate', text: `${result.lapseRate.toFixed(1)}°C/km — weak/stable, limited thermals`, type: 'negative' }); }
   }
 
-  // Thermal top scoring — most important factor for XC
-  if (result.thermalTop) {
-    if (result.thermalTop.aglFt <= 0) {
-      // Thermal top is BELOW launch — no XC possible, severe penalty
+  // Usable ceiling scoring — most important factor for XC
+  // Uses the lower of thermal top and cloud base as the actual flyable ceiling
+  if (result.ceiling) {
+    const ceilAglFt = result.ceiling.aglFt;
+    const ceilMslFt = result.ceiling.altFt;
+    const typeLabel = result.ceilingType === 'cu' ? 'Cu Day ☁' : result.ceilingType === 'blue' ? 'Blue Day' : 'Stable';
+
+    if (result.ceilingType === 'stable' || ceilAglFt <= 0) {
       score -= 30;
-      result.notes.push({ label: 'Thermal Top ⚠', text: `${Math.round(result.thermalTop.altFt).toLocaleString()} ft MSL — BELOW launch elevation. Atmosphere is stable above site. Sled ride at best.`, type: 'negative' });
+      result.notes.push({ label: 'Usable Ceiling ⚠', text: `${Math.round(ceilMslFt).toLocaleString()} ft MSL — BELOW launch. Atmosphere is stable above site. Sled ride at best.`, type: 'negative' });
     }
-    else if (result.thermalTop.aglFt > 4000) { score += 35; result.notes.push({ label: 'Thermal Top', text: `${Math.round(result.thermalTop.altFt).toLocaleString()} ft MSL (${Math.round(result.thermalTop.aglFt).toLocaleString()} above launch) — excellent climb potential`, type: 'positive' }); }
-    else if (result.thermalTop.aglFt > 2000) { score += 20; result.notes.push({ label: 'Thermal Top', text: `${Math.round(result.thermalTop.altFt).toLocaleString()} ft MSL (${Math.round(result.thermalTop.aglFt).toLocaleString()} above launch) — moderate height`, type: 'neutral' }); }
-    else if (result.thermalTop.aglFt > 500) { score += 5; result.notes.push({ label: 'Thermal Top', text: `${Math.round(result.thermalTop.altFt).toLocaleString()} ft MSL (${Math.round(result.thermalTop.aglFt).toLocaleString()} above launch) — low ceiling, limited XC potential`, type: 'negative' }); }
+    else if (ceilAglFt > 4000) {
+      score += 35;
+      result.notes.push({ label: `Usable Ceiling — ${typeLabel}`, text: `${Math.round(ceilMslFt).toLocaleString()} ft MSL — excellent height for XC`, type: 'positive' });
+    }
+    else if (ceilAglFt > 2000) {
+      score += 20;
+      result.notes.push({ label: `Usable Ceiling — ${typeLabel}`, text: `${Math.round(ceilMslFt).toLocaleString()} ft MSL — moderate, workable for XC`, type: 'neutral' });
+    }
+    else if (ceilAglFt > 500) {
+      score += 5;
+      result.notes.push({ label: `Usable Ceiling — ${typeLabel}`, text: `${Math.round(ceilMslFt).toLocaleString()} ft MSL — low ceiling, limited XC potential`, type: 'negative' });
+    }
     else {
-      // Barely above launch — effectively no usable thermals for XC
       score -= 15;
-      result.notes.push({ label: 'Thermal Top', text: `${Math.round(result.thermalTop.altFt).toLocaleString()} ft MSL (${Math.round(result.thermalTop.aglFt).toLocaleString()} above launch) — barely above launch, insufficient for XC`, type: 'negative' });
+      result.notes.push({ label: `Usable Ceiling — ${typeLabel}`, text: `${Math.round(ceilMslFt).toLocaleString()} ft MSL — barely above launch, insufficient for XC`, type: 'negative' });
     }
-  } else {
+
+    // Additional context note for Cu days
+    if (result.ceilingType === 'cu') {
+      result.notes.push({ label: 'Cu Development', text: `Thermals reach cloud base at ${Math.round(result.cloudBase.altFt).toLocaleString()} ft MSL before equilibrating at ${Math.round(result.thermalTop.altFt).toLocaleString()} ft. Expect cumulus — cloud base is your working ceiling.`, type: 'neutral' });
+    }
+  } else if (!result.thermalTop) {
     score -= 25;
-    result.notes.push({ label: 'Thermal Top', text: 'No convective potential detected — stable atmosphere', type: 'negative' });
+    result.notes.push({ label: 'Usable Ceiling', text: 'No convective potential detected — stable atmosphere', type: 'negative' });
   }
 
   // Wind scoring — based on worst-case across the flying band
@@ -1312,12 +1360,12 @@ function renderCards() {
 
       <div class="summary-row">
         <div class="summary-item">
-          <div class="summary-label">Thermal Top</div>
-          <div class="summary-value ${analysis.thermalTop && analysis.thermalTop.altFt > site.elevFt ? (analysis.thermalTop.aglFt > 3000 ? 'good' : 'caution') : 'poor'}">${analysis.thermalTop ? Math.round(analysis.thermalTop.altFt).toLocaleString() + ' ft' : '—'}</div>
+          <div class="summary-label">Usable Ceiling</div>
+          <div class="summary-value ${analysis.ceiling && analysis.ceiling.aglFt > 3000 ? 'good' : analysis.ceiling && analysis.ceiling.aglFt > 500 ? 'caution' : 'poor'}">${analysis.ceiling ? Math.round(analysis.ceiling.altFt).toLocaleString() + ' ft' : '—'}</div>
         </div>
         <div class="summary-item">
-          <div class="summary-label">Cloud Base</div>
-          <div class="summary-value">${analysis.cloudBase ? Math.round(analysis.cloudBase.aglFt).toLocaleString() + ' AGL' : '—'}</div>
+          <div class="summary-label">Day Type</div>
+          <div class="summary-value ${analysis.ceilingType === 'cu' ? 'good' : analysis.ceilingType === 'blue' ? 'caution' : 'poor'}">${analysis.ceilingType === 'cu' ? '☁ Cu' : analysis.ceilingType === 'blue' ? '◻ Blue' : analysis.ceilingType === 'stable' ? '— Stable' : '—'}</div>
         </div>
         <div class="summary-item">
           <div class="summary-label">Lapse Rate</div>
@@ -1449,14 +1497,15 @@ function drawSoundingChart(site) {
   const cw = w - margin.left - margin.right;
   const ch = h - margin.top - margin.bottom;
 
-  // Temperature range
-  const allTemps = levels.flatMap(l => [l.tempF, l.dewF].filter(t => t !== null));
+  // Temperature range — only consider levels within the visible altitude band
+  const visibleLevels = levels.filter(l => l.altFt <= 10500);
+  const allTemps = (visibleLevels.length > 0 ? visibleLevels : levels).flatMap(l => [l.tempF, l.dewF].filter(t => t !== null));
   const tMin = Math.floor(Math.min(...allTemps) / 10) * 10 - 5;
   const tMax = Math.ceil(Math.max(...allTemps) / 10) * 10 + 5;
 
-  // Altitude range
-  const aMin = Math.max(0, levels[0].altFt - 500);
-  const aMax = levels[levels.length - 1].altFt + 500;
+  // Altitude range — capped at 10,000 ft MSL to focus on the flyable band
+  const aMin = Math.max(0, Math.min(levels[0].altFt - 500, site.elevFt - 1000));
+  const aMax = 10000;
 
   function xPos(tempF) { return margin.left + ((tempF - tMin) / (tMax - tMin)) * cw; }
   function yPos(altFt) { return margin.top + ch - ((altFt - aMin) / (aMax - aMin)) * ch; }
@@ -1805,7 +1854,7 @@ function exportReport() {
   // Column headers
   forecastRows.push([
     'Site', 'Elevation (ft)', 'Score', 'Rating',
-    'Thermal Top (ft MSL)', 'Cloud Base (ft AGL)', 'Lapse Rate (°C/km)',
+    'Usable Ceiling (ft MSL)', 'Day Type', 'Thermal Top (ft MSL)', 'Cloud Base (ft MSL)', 'Lapse Rate (°C/km)',
     'Flying Band Wind (mph)', 'Launch Wind Dir', 'Wind Shear?', 'Surface Wind (mph)',
     'Cloud Cover (%)', 'CAPE (J/kg)',
     'Analysis Hour', 'Inversion (ft MSL)',
@@ -1837,8 +1886,10 @@ function exportReport() {
       site.elevFt,
       a.score,
       a.rating === 'good' ? 'XC Potential' : a.rating === 'caution' ? 'Marginal' : 'Unlikely',
+      a.ceiling ? Math.round(a.ceiling.altFt) : '',
+      a.ceilingType === 'cu' ? 'Cu' : a.ceilingType === 'blue' ? 'Blue' : a.ceilingType === 'stable' ? 'Stable' : '',
       a.thermalTop ? Math.round(a.thermalTop.altFt) : '',
-      a.cloudBase ? Math.round(a.cloudBase.aglFt) : '',
+      a.cloudBase ? Math.round(a.cloudBase.altFt) : '',
       a.lapseRate ? Math.round(a.lapseRate * 10) / 10 : '',
       a.windProfile.range || '',
       a.windProfile.launchWind ? degToCompass(a.windProfile.launchWind.dir) + ' ' + Math.round(a.windProfile.launchWind.dir) + '°' : '',
