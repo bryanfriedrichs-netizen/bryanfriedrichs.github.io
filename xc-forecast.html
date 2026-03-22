@@ -6,6 +6,7 @@
   <title>AK XC Forecast — Paragliding Sounding Analysis</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <style>
     :root {
       --bg: #0a0b0f;
@@ -99,6 +100,16 @@
       cursor: not-allowed;
       filter: none;
       transform: none;
+    }
+    .fetch-btn.export-ready {
+      background: var(--surface2);
+      color: var(--text);
+      border: 1px solid var(--border-light);
+      cursor: pointer;
+    }
+    .fetch-btn.export-ready:hover {
+      border-color: var(--accent-thermal);
+      color: var(--accent-thermal);
     }
     .fetch-btn .spinner {
       display: inline-block;
@@ -431,7 +442,10 @@
         <strong>MODEL</strong> GFS via Open-Meteo &nbsp;|&nbsp; <strong>RESOLUTION</strong> 0.25° (~28km) &nbsp;|&nbsp; <strong>LEVELS</strong> 1000–400 hPa
       </div>
     </div>
-    <button class="fetch-btn" id="fetchBtn" onclick="fetchForecast()">Analyze Soundings</button>
+    <div style="display:flex;gap:0.5rem;flex-direction:column;align-items:flex-end;">
+      <button class="fetch-btn" id="fetchBtn" onclick="fetchForecast()">Analyze Soundings</button>
+      <button class="fetch-btn" id="exportBtn" onclick="exportReport()" style="background:var(--surface2);color:var(--text-muted);font-size:0.75rem;padding:0.45rem 1.2rem;" disabled>Export .xlsx Report</button>
+    </div>
   </div>
 </div>
 
@@ -575,6 +589,15 @@ let selectedDate = 1; // 0=today, 1=tomorrow, 2=day after
 let selectedModel = 'gfs';
 let selectedHours = {}; // per-site selected hour index
 let expandedCards = {};
+let analysisCache = {}; // cache keyed by "siteId-hourIdx" to avoid redundant analysis runs
+
+function getCachedAnalysis(siteId, site, hourIdx) {
+  const key = `${siteId}-${hourIdx}-${selectedModel}`;
+  if (!analysisCache[key]) {
+    analysisCache[key] = analyzeSounding(forecastData[siteId], site, hourIdx);
+  }
+  return analysisCache[key];
+}
 
 // ================================================================
 // DATE SELECTOR
@@ -624,6 +647,7 @@ function initModelSelector() {
       // Clear cached data since model changed
       forecastData = {};
       selectedHours = {};
+      analysisCache = {};
     };
     container.appendChild(btn);
   });
@@ -650,6 +674,7 @@ async function fetchForecast() {
   btn.innerHTML = '<span class="spinner"></span>Fetching…';
   statusDot.className = 'dot loading';
   statusText.textContent = `Requesting ${MODELS[selectedModel].name} pressure-level data from Open-Meteo…`;
+  analysisCache = {}; // Clear cache for fresh analysis
 
   // Show skeleton cards
   const content = document.getElementById('content');
@@ -707,6 +732,11 @@ async function fetchForecast() {
 
     renderCards();
     document.getElementById('disclaimer').style.display = 'block';
+    
+    // Enable export button
+    const expBtn = document.getElementById('exportBtn');
+    expBtn.disabled = false;
+    expBtn.classList.add('export-ready');
 
   } catch (err) {
     statusDot.className = 'dot';
@@ -878,22 +908,96 @@ function analyzeSounding(siteData, site, hourIdx) {
     aglFt: lclAglM * 3.281
   };
 
-  // ── Inversion Detection ──
-  for (let i = 1; i < levelsAboveSite.length - 1; i++) {
-    const dT = levelsAboveSite[i + 1].tempC - levelsAboveSite[i].tempC;
-    const dZ = (levelsAboveSite[i + 1].altM - levelsAboveSite[i].altM) / 1000;
-    if (dZ > 0 && dT / dZ > -2) { // inversion or isothermal
-      result.inversionAlt = {
-        altM: levelsAboveSite[i].altM,
-        altFt: levelsAboveSite[i].altFt,
-        aglFt: (levelsAboveSite[i].altM - site.elevM) * 3.281
-      };
-      break;
+  // ── Inversion Detection (all layers, not just first) ──
+  result.inversions = [];
+  for (let i = 0; i < result.levels.length - 1; i++) {
+    const lower = result.levels[i];
+    const upper = result.levels[i + 1];
+    const dZ = (upper.altM - lower.altM) / 1000; // km
+    if (dZ <= 0) continue;
+    const lapseThisLayer = (lower.tempC - upper.tempC) / dZ; // positive = normal cooling
+    
+    // Inversion: temp increases with altitude (lapseThisLayer < 0)
+    // Isothermal: temp stays same (lapseThisLayer ≈ 0)
+    // Very stable: lapse < 2°C/km
+    if (lapseThisLayer < 2) {
+      const invBase = lower;
+      const invTop = upper;
+      const strength = upper.tempC - lower.tempC; // positive = true inversion, near-zero = isothermal
+      const siteAbove = site.elevM > lower.altM;
+      const siteBelow = site.elevM < lower.altM;
+      const nearSurface = lower.altFt < 6000; // below 6000 ft MSL counts as "near surface" for AK
+      
+      result.inversions.push({
+        baseAltM: lower.altM,
+        baseAltFt: lower.altFt,
+        topAltM: upper.altM,
+        topAltFt: upper.altFt,
+        baseAglFt: (lower.altM - site.elevM) * 3.281,
+        topAglFt: (upper.altM - site.elevM) * 3.281,
+        strengthC: strength,
+        lapseRate: lapseThisLayer,
+        siteAbove: siteAbove,
+        siteBelow: siteBelow,
+        nearSurface: nearSurface,
+        type: strength > 1 ? 'inversion' : strength > 0 ? 'weak inversion' : 'isothermal'
+      });
     }
   }
+  
+  // Keep the first inversion for backward compatibility
+  result.inversionAlt = result.inversions.length > 0 ? {
+    altM: result.inversions[0].baseAltM,
+    altFt: result.inversions[0].baseAltFt,
+    aglFt: result.inversions[0].baseAglFt
+  } : null;
 
-  // ── Wind at ridge height ──
+  // ── Wind at ridge height (for direction checks) ──
   const ridgeLevel = result.levels.find(l => l.altM >= site.elevM) || result.levels[0];
+
+  // ── Flying Band Wind Profile ──
+  // Analyze wind across the entire altitude band a pilot would fly in:
+  // from launch height up to thermal top (or reasonable ceiling if no thermal top)
+  const launchAltM = site.elevM;
+  const ceilingAltM = result.thermalTop ? result.thermalTop.altM : site.elevM + 2000; // ~6500ft AGL default
+  const flyingBandLevels = result.levels.filter(l => l.altM >= launchAltM - 100 && l.altM <= ceilingAltM + 300 && l.windSpd !== null);
+
+  // Compute wind stats across the flying band
+  let windProfile = { launchWind: null, midWind: null, topWind: null, maxWind: null, minWind: null, avgWind: null, shear: false, range: '' };
+
+  if (flyingBandLevels.length > 0) {
+    // Launch level: closest to site elevation
+    const launchLevel = flyingBandLevels.reduce((a, b) => Math.abs(a.altM - launchAltM) < Math.abs(b.altM - launchAltM) ? a : b);
+    windProfile.launchWind = { spd: launchLevel.windSpd, dir: launchLevel.windDir, altFt: launchLevel.altFt };
+
+    // Mid level: roughly halfway between launch and ceiling
+    const midAltM = (launchAltM + ceilingAltM) / 2;
+    const midLevel = flyingBandLevels.reduce((a, b) => Math.abs(a.altM - midAltM) < Math.abs(b.altM - midAltM) ? a : b);
+    windProfile.midWind = { spd: midLevel.windSpd, dir: midLevel.windDir, altFt: midLevel.altFt };
+
+    // Top level: closest to thermal top / ceiling
+    const topLevel = flyingBandLevels.reduce((a, b) => Math.abs(a.altM - ceilingAltM) < Math.abs(b.altM - ceilingAltM) ? a : b);
+    windProfile.topWind = { spd: topLevel.windSpd, dir: topLevel.windDir, altFt: topLevel.altFt };
+
+    // Overall stats
+    const allSpeeds = flyingBandLevels.map(l => l.windSpd);
+    windProfile.minWind = Math.min(...allSpeeds);
+    windProfile.maxWind = Math.max(...allSpeeds);
+    windProfile.avgWind = allSpeeds.reduce((a, b) => a + b, 0) / allSpeeds.length;
+
+    // Build range string for summary
+    if (Math.abs(windProfile.maxWind - windProfile.minWind) < 3) {
+      windProfile.range = `${Math.round(windProfile.avgWind)}`;
+    } else {
+      windProfile.range = `${Math.round(windProfile.minWind)}–${Math.round(windProfile.maxWind)}`;
+    }
+
+    // Detect significant wind shear (speed doubles or more across the band, or >15mph increase)
+    const spdDiff = windProfile.maxWind - windProfile.minWind;
+    windProfile.shear = spdDiff > 15 || (windProfile.minWind > 0 && windProfile.maxWind / windProfile.minWind > 2.5);
+  }
+
+  result.windProfile = windProfile;
 
   // ── Scoring ──
   let score = 0;
@@ -914,12 +1018,61 @@ function analyzeSounding(siteData, site, hourIdx) {
     result.notes.push({ label: 'Thermal Top', text: 'No convective potential detected', type: 'negative' });
   }
 
-  // Wind scoring (ridge height)
-  if (ridgeLevel) {
-    const ws = ridgeLevel.windSpd || 0;
-    if (ws < 15) { score += 20; result.notes.push({ label: 'Ridge Wind', text: `${Math.round(ws)} mph at ${Math.round(ridgeLevel.altFt).toLocaleString()} ft — manageable`, type: 'positive' }); }
-    else if (ws < 25) { score += 10; result.notes.push({ label: 'Ridge Wind', text: `${Math.round(ws)} mph at ${Math.round(ridgeLevel.altFt).toLocaleString()} ft — moderate`, type: 'neutral' }); }
-    else { score += 0; result.notes.push({ label: 'Ridge Wind', text: `${Math.round(ws)} mph at ${Math.round(ridgeLevel.altFt).toLocaleString()} ft — too strong`, type: 'negative' }); }
+  // Wind scoring — based on worst-case across the flying band
+  if (windProfile.maxWind !== null) {
+    const worstWind = windProfile.maxWind;
+    if (worstWind < 15) { score += 20; }
+    else if (worstWind < 25) { score += 10; }
+    else { score += 0; }
+
+    // Launch wind note
+    if (windProfile.launchWind) {
+      const lw = windProfile.launchWind;
+      result.notes.push({
+        label: 'Launch Wind',
+        text: `${Math.round(lw.spd)} mph from ${degToCompass(lw.dir)} at ${Math.round(lw.altFt).toLocaleString()} ft`,
+        type: lw.spd < 12 ? 'positive' : lw.spd < 20 ? 'neutral' : 'negative'
+      });
+    }
+
+    // Mid-altitude wind note (only if meaningfully different from launch)
+    if (windProfile.midWind && windProfile.launchWind &&
+        Math.abs(windProfile.midWind.spd - windProfile.launchWind.spd) > 3) {
+      const mw = windProfile.midWind;
+      result.notes.push({
+        label: 'Mid-Band Wind',
+        text: `${Math.round(mw.spd)} mph from ${degToCompass(mw.dir)} at ${Math.round(mw.altFt).toLocaleString()} ft`,
+        type: mw.spd < 15 ? 'positive' : mw.spd < 25 ? 'neutral' : 'negative'
+      });
+    }
+
+    // Top-of-band wind note (only if meaningfully different)
+    if (windProfile.topWind && windProfile.launchWind &&
+        Math.abs(windProfile.topWind.spd - windProfile.launchWind.spd) > 3) {
+      const tw = windProfile.topWind;
+      result.notes.push({
+        label: 'Top-of-Band Wind',
+        text: `${Math.round(tw.spd)} mph from ${degToCompass(tw.dir)} at ${Math.round(tw.altFt).toLocaleString()} ft`,
+        type: tw.spd < 15 ? 'positive' : tw.spd < 25 ? 'neutral' : 'negative'
+      });
+    }
+
+    // Wind shear warning
+    if (windProfile.shear) {
+      score -= 10;
+      result.notes.push({
+        label: 'Wind Shear ⚠',
+        text: `Significant speed change across flying band: ${Math.round(windProfile.minWind)}→${Math.round(windProfile.maxWind)} mph. Expect turbulence at the shear boundary.`,
+        type: 'negative'
+      });
+    }
+
+    // Surface wind note (LZ conditions)
+    result.notes.push({
+      label: 'Surface Wind (LZ)',
+      text: `${Math.round(result.surfaceWind)} mph from ${result.surfaceWindDir !== null ? degToCompass(result.surfaceWindDir) : '?'} — model 10m surface wind (LZ estimate)`,
+      type: result.surfaceWind < 12 ? 'positive' : result.surfaceWind < 20 ? 'neutral' : 'negative'
+    });
   }
 
   // Wind DIRECTION scoring (site-specific from AAW guides)
@@ -1010,9 +1163,46 @@ function analyzeSounding(siteData, site, hourIdx) {
     result.notes.push({ label: 'CAPE', text: `${Math.round(result.cape)} J/kg — convective energy available`, type: 'positive' });
   }
 
-  // Inversion info
-  if (result.inversionAlt) {
-    result.notes.push({ label: 'Inversion', text: `Detected at ~${Math.round(result.inversionAlt.altFt).toLocaleString()} ft MSL (${Math.round(result.inversionAlt.aglFt).toLocaleString()} AGL) — may cap thermals`, type: 'neutral' });
+  // Inversion analysis
+  if (result.inversions.length > 0) {
+    // Find near-surface inversions (most relevant for launch decisions)
+    const nearSurfaceInvs = result.inversions.filter(inv => inv.nearSurface);
+    const upperInvs = result.inversions.filter(inv => !inv.nearSurface);
+
+    for (const inv of nearSurfaceInvs) {
+      const baseStr = `${Math.round(inv.baseAltFt).toLocaleString()} ft MSL`;
+      const topStr = `${Math.round(inv.topAltFt).toLocaleString()} ft MSL`;
+      const aglStr = `${Math.round(inv.baseAglFt).toLocaleString()} AGL`;
+      const strengthStr = inv.strengthC > 0 ? `+${inv.strengthC.toFixed(1)}°C` : `${inv.strengthC.toFixed(1)}°C`;
+
+      if (inv.siteAbove) {
+        // Launch is ABOVE this inversion — good position
+        result.notes.push({
+          label: 'Inversion ▲ ABOVE',
+          text: `${inv.type} at ${baseStr}–${topStr} (${strengthStr}) — launch is ABOVE this layer. You may be in clean air while the valley is capped below.`,
+          type: 'positive'
+        });
+      } else {
+        // Launch is BELOW this inversion — thermals capped
+        score -= 10;
+        result.notes.push({
+          label: 'Inversion ▼ BELOW ⚠',
+          text: `${inv.type} at ${baseStr}–${topStr} (${aglStr}, ${strengthStr}) — launch is BELOW this layer. Thermals will be capped until it breaks. May need to wait for solar heating to erode it.`,
+          type: 'negative'
+        });
+      }
+    }
+
+    // Upper inversions (thermal caps)
+    for (const inv of upperInvs) {
+      const baseStr = `${Math.round(inv.baseAltFt).toLocaleString()} ft MSL`;
+      const aglStr = `${Math.round(inv.baseAglFt).toLocaleString()} AGL`;
+      result.notes.push({
+        label: 'Inversion (upper)',
+        text: `${inv.type} at ${baseStr} (${aglStr}) — may cap thermals at this altitude`,
+        type: 'neutral'
+      });
+    }
   }
 
   result.score = Math.max(0, Math.min(100, score));
@@ -1053,7 +1243,7 @@ function findPeakHour(siteData, site, dateIdx) {
   let bestScore = -999;
 
   for (const idx of hours) {
-    const analysis = analyzeSounding(siteData, site, idx);
+    const analysis = getCachedAnalysis(site.id, site, idx);
     if (analysis.score > bestScore) {
       bestScore = analysis.score;
       bestIdx = idx;
@@ -1090,7 +1280,7 @@ function renderCards() {
       continue;
     }
 
-    const analysis = analyzeSounding(data, site, hourIdx);
+    const analysis = getCachedAnalysis(site.id, site, hourIdx);
     const hours = getBestHoursForDate(data, site, selectedDate);
     const isOpen = expandedCards[site.id] || false;
 
@@ -1123,12 +1313,12 @@ function renderCards() {
           <div class="summary-value ${analysis.lapseRate >= 7.5 ? 'good' : analysis.lapseRate >= 6 ? 'caution' : 'poor'}">${analysis.lapseRate ? analysis.lapseRate.toFixed(1) + '°/km' : '—'}</div>
         </div>
         <div class="summary-item">
-          <div class="summary-label">Ridge Wind</div>
-          <div class="summary-value ${analysis.surfaceWind < 15 ? 'good' : analysis.surfaceWind < 25 ? 'caution' : 'poor'}">${Math.round(analysis.surfaceWind)} mph</div>
+          <div class="summary-label">Flying Band Wind</div>
+          <div class="summary-value ${analysis.windProfile.maxWind !== null && analysis.windProfile.maxWind < 15 ? 'good' : analysis.windProfile.maxWind < 25 ? 'caution' : 'poor'}">${analysis.windProfile.range ? analysis.windProfile.range + ' mph' : '—'}${analysis.windProfile.shear ? ' ⚠' : ''}</div>
         </div>
         <div class="summary-item">
-          <div class="summary-label">Wind Dir</div>
-          <div class="summary-value ${site.dangerWindDir && isWindInRange(analysis.surfaceWindDir, site.dangerWindDir[0], site.dangerWindDir[1]) ? 'poor' : site.idealWindDir && isWindInRange(analysis.surfaceWindDir, site.idealWindDir[0], site.idealWindDir[1]) ? 'good' : 'caution'}">${analysis.surfaceWindDir !== null ? degToCompass(analysis.surfaceWindDir) + ' ' + Math.round(analysis.surfaceWindDir) + '°' : '—'}</div>
+          <div class="summary-label">Launch Dir</div>
+          <div class="summary-value ${analysis.windProfile.launchWind && site.dangerWindDir && isWindInRange(analysis.windProfile.launchWind.dir, site.dangerWindDir[0], site.dangerWindDir[1]) ? 'poor' : analysis.windProfile.launchWind && site.idealWindDir && isWindInRange(analysis.windProfile.launchWind.dir, site.idealWindDir[0], site.idealWindDir[1]) ? 'good' : 'caution'}">${analysis.windProfile.launchWind ? degToCompass(analysis.windProfile.launchWind.dir) + ' ' + Math.round(analysis.windProfile.launchWind.dir) + '°' : '—'}</div>
         </div>
         <div class="summary-item">
           <div class="summary-label">Cloud %</div>
@@ -1137,6 +1327,22 @@ function renderCards() {
         <div class="summary-item">
           <div class="summary-label">CAPE</div>
           <div class="summary-value ${analysis.cape > 100 ? 'good' : 'caution'}">${analysis.cape !== null ? Math.round(analysis.cape) : '—'}</div>
+        </div>
+        <div class="summary-item">
+          <div class="summary-label">Inversions</div>
+          <div class="summary-value ${analysis.inversions.length === 0 ? 'good' : analysis.inversions.some(inv => !inv.siteAbove && inv.nearSurface) ? 'poor' : 'caution'}">${
+            analysis.inversions.length === 0 ? 'None' :
+            (() => {
+              const nearSurf = analysis.inversions.filter(inv => inv.nearSurface);
+              if (nearSurf.length === 0) return analysis.inversions.length + ' upper';
+              const below = nearSurf.filter(inv => !inv.siteAbove);
+              const above = nearSurf.filter(inv => inv.siteAbove);
+              let parts = [];
+              if (below.length > 0) parts.push(below.length + ' below ⚠');
+              if (above.length > 0) parts.push(above.length + ' above ▲');
+              return parts.join(', ');
+            })()
+          }</div>
         </div>
       </div>
 
@@ -1222,7 +1428,7 @@ function drawSoundingChart(site) {
   const ctx = canvas.getContext('2d');
   ctx.scale(dpr, dpr);
 
-  const analysis = analyzeSounding(data, site, hourIdx);
+  const analysis = getCachedAnalysis(site.id, site, hourIdx);
   const levels = analysis.levels.filter(l => l.altM >= 0);
 
   if (levels.length < 2) return;
@@ -1362,6 +1568,49 @@ function drawSoundingChart(site) {
       ctx.font = '8px JetBrains Mono, monospace';
       ctx.textAlign = 'left';
       ctx.fillText(`☁ Cloud Base ~${Math.round(analysis.cloudBase.altFt).toLocaleString()}ft`, margin.left + 4, cbY - 4);
+    }
+  }
+
+  // ── Inversion layers ──
+  if (analysis.inversions && analysis.inversions.length > 0) {
+    for (const inv of analysis.inversions) {
+      const invBaseY = yPos(inv.baseAltFt);
+      const invTopY = yPos(inv.topAltFt);
+      if (invBaseY < margin.top || invTopY > margin.top + ch) continue;
+
+      // Shaded band for the inversion layer
+      const isBelowSite = inv.siteAbove;
+      const color = isBelowSite ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)';
+      const borderColor = isBelowSite ? 'rgba(34,197,94,0.35)' : 'rgba(239,68,68,0.35)';
+      const textColor = isBelowSite ? 'rgba(34,197,94,0.6)' : 'rgba(239,68,68,0.7)';
+
+      // Fill band
+      ctx.fillStyle = color;
+      ctx.fillRect(margin.left, invTopY, cw, invBaseY - invTopY);
+
+      // Border lines
+      ctx.strokeStyle = borderColor;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath();
+      ctx.moveTo(margin.left, invBaseY);
+      ctx.lineTo(margin.left + cw, invBaseY);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(margin.left, invTopY);
+      ctx.lineTo(margin.left + cw, invTopY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Label
+      ctx.fillStyle = textColor;
+      ctx.font = '7px JetBrains Mono, monospace';
+      ctx.textAlign = 'right';
+      const label = isBelowSite
+        ? `INV ${Math.round(inv.baseAltFt).toLocaleString()}ft (below launch)`
+        : `INV ${Math.round(inv.baseAltFt).toLocaleString()}ft (above launch ⚠)`;
+      const labelY = (invBaseY + invTopY) / 2 + 3;
+      ctx.fillText(label, margin.left + cw - 4, labelY);
     }
   }
 
@@ -1520,6 +1769,161 @@ function drawSoundingChart(site) {
   ctx.font = '10px JetBrains Mono, monospace';
   ctx.textAlign = 'right';
   ctx.fillText(`${MODELS[selectedModel].name} | ${timeStr.slice(0,10)} ${h12}:00 ${ampm} AKDT`, margin.left + cw, legY);
+}
+
+// ================================================================
+// EXPORT REPORT TO XLSX
+// ================================================================
+function exportReport() {
+  if (Object.keys(forecastData).length === 0) return;
+
+  const model = MODELS[selectedModel];
+  const targetDate = new Date();
+  targetDate.setDate(targetDate.getDate() + selectedDate);
+  const dateStr = targetDate.toISOString().slice(0, 10);
+  const now = new Date();
+
+  // ── Build Forecast Data sheet ──
+  const forecastRows = [];
+  
+  // Header rows
+  forecastRows.push(['AK XC Forecast Report']);
+  forecastRows.push([`Forecast Date: ${dateStr}`, '', `Model: ${model.name} (${model.resolution})`, '', `Generated: ${now.toLocaleString('en-US', {timeZone:'America/Anchorage'})}`]);
+  forecastRows.push([]);
+  
+  // Column headers
+  forecastRows.push([
+    'Site', 'Elevation (ft)', 'Score', 'Rating',
+    'Thermal Top (ft AGL)', 'Cloud Base (ft AGL)', 'Lapse Rate (°C/km)',
+    'Flying Band Wind (mph)', 'Launch Wind Dir', 'Wind Shear?', 'Surface Wind (mph)',
+    'Cloud Cover (%)', 'CAPE (J/kg)',
+    'Analysis Hour', 'Inversion (ft MSL)',
+    '', 'Actual Conditions', 'Flight Summary', 'Accuracy (1-5)', 'Notes'
+  ]);
+
+  // Data rows — one per site at peak hour
+  for (const site of SITES) {
+    const data = forecastData[site.id];
+    if (!data) {
+      forecastRows.push([site.name, site.elevFt, 'NO DATA']);
+      continue;
+    }
+
+    const peakIdx = selectedHours[site.id] || findPeakHour(data, site, selectedDate);
+    if (peakIdx === null) {
+      forecastRows.push([site.name, site.elevFt, 'NO DATA']);
+      continue;
+    }
+
+    const a = getCachedAnalysis(site.id, site, peakIdx);
+    const timeLabel = data.hourly.time[peakIdx];
+    const hr = parseInt(timeLabel.slice(11, 13));
+    const ampm = hr >= 12 ? 'PM' : 'AM';
+    const h12 = hr > 12 ? hr - 12 : hr === 0 ? 12 : hr;
+
+    forecastRows.push([
+      site.name,
+      site.elevFt,
+      a.score,
+      a.rating === 'good' ? 'XC Potential' : a.rating === 'caution' ? 'Marginal' : 'Unlikely',
+      a.thermalTop ? Math.round(a.thermalTop.aglFt) : '',
+      a.cloudBase ? Math.round(a.cloudBase.aglFt) : '',
+      a.lapseRate ? Math.round(a.lapseRate * 10) / 10 : '',
+      a.windProfile.range || '',
+      a.windProfile.launchWind ? degToCompass(a.windProfile.launchWind.dir) + ' ' + Math.round(a.windProfile.launchWind.dir) + '°' : '',
+      a.windProfile.shear ? 'YES' : 'No',
+      Math.round(a.surfaceWind),
+      a.cloudCover !== null ? Math.round(a.cloudCover) : '',
+      a.cape !== null ? Math.round(a.cape) : '',
+      `${h12}:00 ${ampm}`,
+      a.inversionAlt ? Math.round(a.inversionAlt.altFt) : '',
+      '',  // spacer
+      '',  // Actual Conditions (user fills in)
+      '',  // Flight Summary (user fills in)
+      '',  // Accuracy rating (user fills in)
+      ''   // Notes (user fills in)
+    ]);
+  }
+
+  // Add spacer and analysis notes section
+  forecastRows.push([]);
+  forecastRows.push(['Detailed Analysis Notes']);
+  forecastRows.push([]);
+
+  for (const site of SITES) {
+    const data = forecastData[site.id];
+    if (!data) continue;
+    const peakIdx = selectedHours[site.id] || findPeakHour(data, site, selectedDate);
+    if (peakIdx === null) continue;
+    const a = getCachedAnalysis(site.id, site, peakIdx);
+
+    forecastRows.push([`${site.name} (${a.score}/100 — ${a.rating})`]);
+    for (const note of a.notes) {
+      forecastRows.push(['', note.label, note.text, note.type]);
+    }
+    forecastRows.push([]);
+  }
+
+  // ── Build Hourly Breakdown sheet ──
+  const hourlyRows = [];
+  hourlyRows.push(['Hourly Score Breakdown by Site', '', `Date: ${dateStr}`, '', `Model: ${model.name}`]);
+  hourlyRows.push([]);
+  
+  // Header
+  const hourHeaders = ['Hour'];
+  for (const site of SITES) { hourHeaders.push(site.name); }
+  hourlyRows.push(hourHeaders);
+
+  // Get all valid hours for the date
+  const firstSiteWithData = SITES.find(s => forecastData[s.id]);
+  if (firstSiteWithData) {
+    const hours = getBestHoursForDate(forecastData[firstSiteWithData.id], firstSiteWithData, selectedDate);
+    for (const hi of hours) {
+      const timeLabel = forecastData[firstSiteWithData.id].hourly.time[hi];
+      const hr = parseInt(timeLabel.slice(11, 13));
+      const ampm = hr >= 12 ? 'PM' : 'AM';
+      const h12 = hr > 12 ? hr - 12 : hr === 0 ? 12 : hr;
+      
+      const row = [`${h12}:00 ${ampm}`];
+      for (const site of SITES) {
+        const data = forecastData[site.id];
+        if (!data) { row.push(''); continue; }
+        try {
+          const a = getCachedAnalysis(site.id, site, hi);
+          row.push(a.score);
+        } catch { row.push(''); }
+      }
+      hourlyRows.push(row);
+    }
+  }
+
+  // ── Create workbook ──
+  const wb = XLSX.utils.book_new();
+  
+  const ws1 = XLSX.utils.aoa_to_sheet(forecastRows);
+  const ws2 = XLSX.utils.aoa_to_sheet(hourlyRows);
+
+  // Column widths for forecast sheet
+  ws1['!cols'] = [
+    {wch: 20}, {wch: 12}, {wch: 8}, {wch: 14},
+    {wch: 18}, {wch: 18}, {wch: 16},
+    {wch: 14}, {wch: 12}, {wch: 14}, {wch: 12},
+    {wch: 14}, {wch: 16},
+    {wch: 3},
+    {wch: 25}, {wch: 30}, {wch: 14}, {wch: 30}
+  ];
+
+  // Column widths for hourly sheet
+  const hourCols = [{wch: 12}];
+  for (const s of SITES) hourCols.push({wch: 18});
+  ws2['!cols'] = hourCols;
+
+  XLSX.utils.book_append_sheet(wb, ws1, 'Forecast');
+  XLSX.utils.book_append_sheet(wb, ws2, 'Hourly Scores');
+
+  // ── Download ──
+  const filename = `AK_XC_Forecast_${dateStr}_${model.name}.xlsx`;
+  XLSX.writeFile(wb, filename);
 }
 
 // ================================================================
