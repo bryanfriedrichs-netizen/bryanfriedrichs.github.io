@@ -1009,13 +1009,24 @@ function analyzeSounding(siteData, site, hourIdx) {
     else { score += 0; result.notes.push({ label: 'Lapse Rate', text: `${result.lapseRate.toFixed(1)}°C/km — weak/stable, limited thermals`, type: 'negative' }); }
   }
 
-  // Thermal top scoring
+  // Thermal top scoring — most important factor for XC
   if (result.thermalTop) {
-    if (result.thermalTop.aglFt > 4000) { score += 25; result.notes.push({ label: 'Thermal Top', text: `${Math.round(result.thermalTop.altFt).toLocaleString()} ft MSL (${Math.round(result.thermalTop.aglFt).toLocaleString()} AGL) — excellent climb potential`, type: 'positive' }); }
-    else if (result.thermalTop.aglFt > 2000) { score += 15; result.notes.push({ label: 'Thermal Top', text: `${Math.round(result.thermalTop.altFt).toLocaleString()} ft MSL (${Math.round(result.thermalTop.aglFt).toLocaleString()} AGL) — moderate height`, type: 'neutral' }); }
-    else { score += 5; result.notes.push({ label: 'Thermal Top', text: `${Math.round(result.thermalTop.altFt).toLocaleString()} ft MSL (${Math.round(result.thermalTop.aglFt).toLocaleString()} AGL) — low ceiling`, type: 'negative' }); }
+    if (result.thermalTop.aglFt <= 0) {
+      // Thermal top is BELOW launch — no XC possible, severe penalty
+      score -= 30;
+      result.notes.push({ label: 'Thermal Top ⚠', text: `${Math.round(result.thermalTop.altFt).toLocaleString()} ft MSL — BELOW launch elevation. Atmosphere is stable above site. Sled ride at best.`, type: 'negative' });
+    }
+    else if (result.thermalTop.aglFt > 4000) { score += 35; result.notes.push({ label: 'Thermal Top', text: `${Math.round(result.thermalTop.altFt).toLocaleString()} ft MSL (${Math.round(result.thermalTop.aglFt).toLocaleString()} AGL) — excellent climb potential`, type: 'positive' }); }
+    else if (result.thermalTop.aglFt > 2000) { score += 20; result.notes.push({ label: 'Thermal Top', text: `${Math.round(result.thermalTop.altFt).toLocaleString()} ft MSL (${Math.round(result.thermalTop.aglFt).toLocaleString()} AGL) — moderate height`, type: 'neutral' }); }
+    else if (result.thermalTop.aglFt > 500) { score += 5; result.notes.push({ label: 'Thermal Top', text: `${Math.round(result.thermalTop.altFt).toLocaleString()} ft MSL (${Math.round(result.thermalTop.aglFt).toLocaleString()} AGL) — low ceiling, limited XC potential`, type: 'negative' }); }
+    else {
+      // Barely above launch — effectively no usable thermals for XC
+      score -= 15;
+      result.notes.push({ label: 'Thermal Top', text: `${Math.round(result.thermalTop.altFt).toLocaleString()} ft MSL (${Math.round(result.thermalTop.aglFt).toLocaleString()} AGL) — barely above launch, insufficient for XC`, type: 'negative' });
+    }
   } else {
-    result.notes.push({ label: 'Thermal Top', text: 'No convective potential detected', type: 'negative' });
+    score -= 25;
+    result.notes.push({ label: 'Thermal Top', text: 'No convective potential detected — stable atmosphere', type: 'negative' });
   }
 
   // Wind scoring — based on worst-case across the flying band
