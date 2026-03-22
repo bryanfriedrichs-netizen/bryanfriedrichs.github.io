@@ -1016,13 +1016,13 @@ function analyzeSounding(siteData, site, hourIdx) {
       score -= 30;
       result.notes.push({ label: 'Thermal Top ⚠', text: `${Math.round(result.thermalTop.altFt).toLocaleString()} ft MSL — BELOW launch elevation. Atmosphere is stable above site. Sled ride at best.`, type: 'negative' });
     }
-    else if (result.thermalTop.aglFt > 4000) { score += 35; result.notes.push({ label: 'Thermal Top', text: `${Math.round(result.thermalTop.altFt).toLocaleString()} ft MSL (${Math.round(result.thermalTop.aglFt).toLocaleString()} AGL) — excellent climb potential`, type: 'positive' }); }
-    else if (result.thermalTop.aglFt > 2000) { score += 20; result.notes.push({ label: 'Thermal Top', text: `${Math.round(result.thermalTop.altFt).toLocaleString()} ft MSL (${Math.round(result.thermalTop.aglFt).toLocaleString()} AGL) — moderate height`, type: 'neutral' }); }
-    else if (result.thermalTop.aglFt > 500) { score += 5; result.notes.push({ label: 'Thermal Top', text: `${Math.round(result.thermalTop.altFt).toLocaleString()} ft MSL (${Math.round(result.thermalTop.aglFt).toLocaleString()} AGL) — low ceiling, limited XC potential`, type: 'negative' }); }
+    else if (result.thermalTop.aglFt > 4000) { score += 35; result.notes.push({ label: 'Thermal Top', text: `${Math.round(result.thermalTop.altFt).toLocaleString()} ft MSL (${Math.round(result.thermalTop.aglFt).toLocaleString()} above launch) — excellent climb potential`, type: 'positive' }); }
+    else if (result.thermalTop.aglFt > 2000) { score += 20; result.notes.push({ label: 'Thermal Top', text: `${Math.round(result.thermalTop.altFt).toLocaleString()} ft MSL (${Math.round(result.thermalTop.aglFt).toLocaleString()} above launch) — moderate height`, type: 'neutral' }); }
+    else if (result.thermalTop.aglFt > 500) { score += 5; result.notes.push({ label: 'Thermal Top', text: `${Math.round(result.thermalTop.altFt).toLocaleString()} ft MSL (${Math.round(result.thermalTop.aglFt).toLocaleString()} above launch) — low ceiling, limited XC potential`, type: 'negative' }); }
     else {
       // Barely above launch — effectively no usable thermals for XC
       score -= 15;
-      result.notes.push({ label: 'Thermal Top', text: `${Math.round(result.thermalTop.altFt).toLocaleString()} ft MSL (${Math.round(result.thermalTop.aglFt).toLocaleString()} AGL) — barely above launch, insufficient for XC`, type: 'negative' });
+      result.notes.push({ label: 'Thermal Top', text: `${Math.round(result.thermalTop.altFt).toLocaleString()} ft MSL (${Math.round(result.thermalTop.aglFt).toLocaleString()} above launch) — barely above launch, insufficient for XC`, type: 'negative' });
     }
   } else {
     score -= 25;
@@ -1313,7 +1313,7 @@ function renderCards() {
       <div class="summary-row">
         <div class="summary-item">
           <div class="summary-label">Thermal Top</div>
-          <div class="summary-value ${analysis.thermalTop && analysis.thermalTop.aglFt > 3000 ? 'good' : analysis.thermalTop && analysis.thermalTop.aglFt > 1500 ? 'caution' : 'poor'}">${analysis.thermalTop ? Math.round(analysis.thermalTop.aglFt).toLocaleString() + ' AGL' : '—'}</div>
+          <div class="summary-value ${analysis.thermalTop && analysis.thermalTop.altFt > site.elevFt ? (analysis.thermalTop.aglFt > 3000 ? 'good' : 'caution') : 'poor'}">${analysis.thermalTop ? Math.round(analysis.thermalTop.altFt).toLocaleString() + ' ft' : '—'}</div>
         </div>
         <div class="summary-item">
           <div class="summary-label">Cloud Base</div>
@@ -1805,7 +1805,7 @@ function exportReport() {
   // Column headers
   forecastRows.push([
     'Site', 'Elevation (ft)', 'Score', 'Rating',
-    'Thermal Top (ft AGL)', 'Cloud Base (ft AGL)', 'Lapse Rate (°C/km)',
+    'Thermal Top (ft MSL)', 'Cloud Base (ft AGL)', 'Lapse Rate (°C/km)',
     'Flying Band Wind (mph)', 'Launch Wind Dir', 'Wind Shear?', 'Surface Wind (mph)',
     'Cloud Cover (%)', 'CAPE (J/kg)',
     'Analysis Hour', 'Inversion (ft MSL)',
@@ -1837,7 +1837,7 @@ function exportReport() {
       site.elevFt,
       a.score,
       a.rating === 'good' ? 'XC Potential' : a.rating === 'caution' ? 'Marginal' : 'Unlikely',
-      a.thermalTop ? Math.round(a.thermalTop.aglFt) : '',
+      a.thermalTop ? Math.round(a.thermalTop.altFt) : '',
       a.cloudBase ? Math.round(a.cloudBase.aglFt) : '',
       a.lapseRate ? Math.round(a.lapseRate * 10) / 10 : '',
       a.windProfile.range || '',
