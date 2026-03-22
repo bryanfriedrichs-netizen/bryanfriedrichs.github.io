@@ -584,19 +584,102 @@ const MODELS = {
 // ================================================================
 // STATE
 // ================================================================
-let forecastData = {};
+let forecastData = {};       // primary model data keyed by siteId
+let forecastDataAlt = {};    // secondary model data (for composite mode)
 let selectedDate = 1; // 0=today, 1=tomorrow, 2=day after
-let selectedModel = 'gfs';
+let selectedModel = 'composite';
 let selectedHours = {}; // per-site selected hour index
 let expandedCards = {};
-let analysisCache = {}; // cache keyed by "siteId-hourIdx" to avoid redundant analysis runs
+let analysisCache = {}; // cache keyed by "siteId-hourIdx-model" to avoid redundant analysis runs
+let compositeResults = {}; // cached composite results keyed by "siteId-hourIdx"
 
-function getCachedAnalysis(siteId, site, hourIdx) {
-  const key = `${siteId}-${hourIdx}-${selectedModel}`;
+function getCachedAnalysis(siteId, site, hourIdx, modelKey) {
+  const mKey = modelKey || selectedModel;
+  const dataSource = mKey === 'ecmwf' ? (forecastDataAlt[siteId] ? forecastDataAlt : forecastData) : forecastData;
+  // In composite mode, GFS is primary (forecastData), ECMWF is alt (forecastDataAlt)
+  const src = (selectedModel === 'composite')
+    ? (mKey === 'ecmwf' ? forecastDataAlt : forecastData)
+    : forecastData;
+  if (!src[siteId]) return null;
+  const key = `${siteId}-${hourIdx}-${mKey}`;
   if (!analysisCache[key]) {
-    analysisCache[key] = analyzeSounding(forecastData[siteId], site, hourIdx);
+    const savedModel = selectedModel;
+    selectedModel = mKey; // temporarily set for model-specific level lookups
+    analysisCache[key] = analyzeSounding(src[siteId], site, hourIdx);
+    selectedModel = savedModel;
   }
   return analysisCache[key];
+}
+
+function getCompositeResult(siteId, site, hourIdx) {
+  const key = `${siteId}-${hourIdx}`;
+  if (compositeResults[key]) return compositeResults[key];
+
+  const gfsAnalysis = getCachedAnalysis(siteId, site, hourIdx, 'gfs');
+  const ecmwfAnalysis = getCachedAnalysis(siteId, site, hourIdx, 'ecmwf');
+
+  if (!gfsAnalysis && !ecmwfAnalysis) return null;
+  if (!ecmwfAnalysis) { compositeResults[key] = { ...gfsAnalysis, confidence: 'single', gfsScore: gfsAnalysis.score, ecmwfScore: null, confidenceNote: 'ECMWF data unavailable — GFS only' }; return compositeResults[key]; }
+  if (!gfsAnalysis) { compositeResults[key] = { ...ecmwfAnalysis, confidence: 'single', gfsScore: null, ecmwfScore: ecmwfAnalysis.score, confidenceNote: 'GFS data unavailable — ECMWF only' }; return compositeResults[key]; }
+
+  const scoreDiff = Math.abs(gfsAnalysis.score - ecmwfAnalysis.score);
+  const avgScore = Math.round((gfsAnalysis.score + ecmwfAnalysis.score) / 2);
+  // Use the more conservative (lower) score as the composite
+  const conservativeScore = Math.min(gfsAnalysis.score, ecmwfAnalysis.score);
+
+  let confidence, confidenceNote;
+  if (scoreDiff <= 12) {
+    confidence = 'high';
+    confidenceNote = `Models agree (GFS ${gfsAnalysis.score} · ECMWF ${ecmwfAnalysis.score})`;
+  } else if (scoreDiff <= 25) {
+    confidence = 'moderate';
+    confidenceNote = `Models differ (GFS ${gfsAnalysis.score} · ECMWF ${ecmwfAnalysis.score}) — some uncertainty`;
+  } else {
+    confidence = 'low';
+    confidenceNote = `Models disagree (GFS ${gfsAnalysis.score} · ECMWF ${ecmwfAnalysis.score}) — low confidence, use caution`;
+  }
+
+  // Build composite: use GFS as the base (better vertical resolution) but blend key values
+  const composite = { ...gfsAnalysis };
+  composite.score = conservativeScore;
+  composite.gfsScore = gfsAnalysis.score;
+  composite.ecmwfScore = ecmwfAnalysis.score;
+  composite.confidence = confidence;
+  composite.confidenceNote = confidenceNote;
+
+  // Re-derive rating from composite score
+  if (composite.score >= 60) composite.rating = 'good';
+  else if (composite.score >= 35) composite.rating = 'caution';
+  else composite.rating = 'poor';
+
+  // Add confidence note at the top of the notes
+  composite.notes = [
+    { label: `Confidence — ${confidence.charAt(0).toUpperCase() + confidence.slice(1)}`, text: confidenceNote, type: confidence === 'high' ? 'positive' : confidence === 'moderate' ? 'neutral' : 'negative' },
+    ...gfsAnalysis.notes
+  ];
+
+  // Flag specific parameter disagreements
+  if (gfsAnalysis.ceilingType !== ecmwfAnalysis.ceilingType) {
+    composite.notes.splice(1, 0, { label: 'Day Type Disagreement', text: `GFS predicts ${gfsAnalysis.ceilingType || 'stable'} day, ECMWF predicts ${ecmwfAnalysis.ceilingType || 'stable'} day`, type: 'neutral' });
+  }
+
+  if (gfsAnalysis.ceiling && ecmwfAnalysis.ceiling) {
+    const ceilDiff = Math.abs(gfsAnalysis.ceiling.altFt - ecmwfAnalysis.ceiling.altFt);
+    if (ceilDiff > 1500) {
+      composite.notes.splice(1, 0, { label: 'Ceiling Disagreement', text: `GFS ceiling ${Math.round(gfsAnalysis.ceiling.altFt).toLocaleString()} ft vs ECMWF ${Math.round(ecmwfAnalysis.ceiling.altFt).toLocaleString()} ft — ${Math.round(ceilDiff).toLocaleString()} ft difference`, type: 'neutral' });
+    }
+  }
+
+  // For safety-critical items, take the more conservative reading
+  if (gfsAnalysis.windProfile.maxWind !== null && ecmwfAnalysis.windProfile.maxWind !== null) {
+    const worstWind = Math.max(gfsAnalysis.windProfile.maxWind, ecmwfAnalysis.windProfile.maxWind);
+    if (Math.abs(gfsAnalysis.windProfile.maxWind - ecmwfAnalysis.windProfile.maxWind) > 8) {
+      composite.notes.splice(1, 0, { label: 'Wind Disagreement', text: `GFS max ${Math.round(gfsAnalysis.windProfile.maxWind)} mph vs ECMWF ${Math.round(ecmwfAnalysis.windProfile.maxWind)} mph — using conservative estimate`, type: 'neutral' });
+    }
+  }
+
+  compositeResults[key] = composite;
+  return composite;
 }
 
 // ================================================================
@@ -631,33 +714,42 @@ function initDateSelector() {
 // ================================================================
 function initModelSelector() {
   const container = document.getElementById('modelSelector');
-  const modelKeys = Object.keys(MODELS);
+  // Composite first, then individual models
+  const options = [
+    { key: 'composite', label: 'Composite', title: 'Runs both GFS and ECMWF, shows conservative score with confidence indicator' },
+    ...Object.keys(MODELS).map(key => ({ key, label: MODELS[key].name, title: MODELS[key].description }))
+  ];
 
-  modelKeys.forEach(key => {
-    const model = MODELS[key];
+  options.forEach(opt => {
     const btn = document.createElement('button');
-    btn.className = 'date-btn' + (key === selectedModel ? ' active' : '');
-    btn.textContent = model.name;
-    btn.title = model.description;
+    btn.className = 'date-btn' + (opt.key === selectedModel ? ' active' : '');
+    btn.textContent = opt.label;
+    btn.title = opt.title;
     btn.onclick = () => {
-      selectedModel = key;
+      selectedModel = opt.key;
       container.querySelectorAll('.date-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       updateModelInfo();
-      // Clear cached data since model changed
       forecastData = {};
+      forecastDataAlt = {};
       selectedHours = {};
       analysisCache = {};
+      compositeResults = {};
     };
     container.appendChild(btn);
   });
 }
 
 function updateModelInfo() {
-  const model = MODELS[selectedModel];
-  let info = `<strong>MODEL</strong> ${model.name} via Open-Meteo &nbsp;|&nbsp; <strong>RESOLUTION</strong> ${model.resolution} &nbsp;|&nbsp; <strong>LEVELS</strong> 1000–400 hPa &nbsp;|&nbsp; <strong>UPDATES</strong> Every ${model.updateFreq}`;
-  if (model.caveat) {
-    info += `<br><span style="color:var(--accent-caution);font-size:0.65rem;">⚠ ${model.caveat}</span>`;
+  let info;
+  if (selectedModel === 'composite') {
+    info = `<strong>MODE</strong> Composite (GFS + ECMWF) &nbsp;|&nbsp; <strong>SCORE</strong> Conservative (lower of two) &nbsp;|&nbsp; Shows model agreement & confidence`;
+  } else {
+    const model = MODELS[selectedModel];
+    info = `<strong>MODEL</strong> ${model.name} via Open-Meteo &nbsp;|&nbsp; <strong>RESOLUTION</strong> ${model.resolution} &nbsp;|&nbsp; <strong>LEVELS</strong> 1000–400 hPa &nbsp;|&nbsp; <strong>UPDATES</strong> Every ${model.updateFreq}`;
+    if (model.caveat) {
+      info += `<br><span style="color:var(--accent-caution);font-size:0.65rem;">⚠ ${model.caveat}</span>`;
+    }
   }
   document.getElementById('modelInfo').innerHTML = info;
 }
@@ -673,8 +765,15 @@ async function fetchForecast() {
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span>Fetching…';
   statusDot.className = 'dot loading';
-  statusText.textContent = `Requesting ${MODELS[selectedModel].name} pressure-level data from Open-Meteo…`;
-  analysisCache = {}; // Clear cache for fresh analysis
+  analysisCache = {};
+  compositeResults = {};
+
+  const isComposite = selectedModel === 'composite';
+  const modelsToFetch = isComposite ? ['gfs', 'ecmwf'] : [selectedModel];
+
+  statusText.textContent = isComposite
+    ? 'Requesting GFS + ECMWF pressure-level data from Open-Meteo…'
+    : `Requesting ${MODELS[selectedModel].name} pressure-level data from Open-Meteo…`;
 
   // Show skeleton cards
   const content = document.getElementById('content');
@@ -684,61 +783,71 @@ async function fetchForecast() {
   let fetchErrors = [];
 
   try {
-    // Fetch sequentially with delay to avoid Open-Meteo rate limits (429)
-    for (let i = 0; i < SITES.length; i++) {
-      const site = SITES[i];
-      statusText.textContent = `Fetching ${site.name} (${i + 1}/${SITES.length})…`;
-      
-      // Retry logic for rate limits
-      let attempts = 0;
-      let success = false;
-      while (attempts < 3) {
-        try {
-          const data = await fetchSiteData(site);
-          forecastData[site.id] = data;
-          success = true;
-          break;
-        } catch (e) {
-          if ((e.message.includes('429') || e.message.includes('400')) && attempts < 2) {
-            attempts++;
-            statusText.textContent = `Error on ${site.name} — retrying in ${attempts * 2}s…`;
-            await new Promise(r => setTimeout(r, attempts * 2000));
-          } else {
-            // Log error but continue with other sites
-            fetchErrors.push(`${site.name}: ${e.message}`);
+    for (const modelKey of modelsToFetch) {
+      const modelLabel = MODELS[modelKey].name;
+      const targetStore = (isComposite && modelKey === 'ecmwf') ? forecastDataAlt : forecastData;
+
+      for (let i = 0; i < SITES.length; i++) {
+        const site = SITES[i];
+        const totalSteps = SITES.length * modelsToFetch.length;
+        const currentStep = modelsToFetch.indexOf(modelKey) * SITES.length + i + 1;
+        statusText.textContent = `Fetching ${site.name} — ${modelLabel} (${currentStep}/${totalSteps})…`;
+
+        let attempts = 0;
+        while (attempts < 3) {
+          try {
+            const savedModel = selectedModel;
+            selectedModel = modelKey; // temporarily set for fetchSiteData
+            const data = await fetchSiteData(site);
+            selectedModel = savedModel;
+            targetStore[site.id] = data;
             break;
+          } catch (e) {
+            if (selectedModel !== modelKey) selectedModel = isComposite ? 'composite' : modelKey;
+            if ((e.message.includes('429') || e.message.includes('400')) && attempts < 2) {
+              attempts++;
+              statusText.textContent = `Error on ${site.name} (${modelLabel}) — retrying in ${attempts * 2}s…`;
+              await new Promise(r => setTimeout(r, attempts * 2000));
+            } else {
+              fetchErrors.push(`${site.name} (${modelLabel}): ${e.message}`);
+              break;
+            }
           }
         }
-      }
-      
-      // Small delay between requests to stay under rate limit
-      if (i < SITES.length - 1) {
-        await new Promise(r => setTimeout(r, 600));
+
+        if (i < SITES.length - 1 || modelsToFetch.indexOf(modelKey) < modelsToFetch.length - 1) {
+          await new Promise(r => setTimeout(r, 600));
+        }
       }
     }
 
+    // Restore selectedModel
+    selectedModel = isComposite ? 'composite' : modelsToFetch[0];
+
     const loadedCount = Object.keys(forecastData).length;
     if (loadedCount === 0) {
-      throw new Error('No data loaded for any site. The selected model may not cover Alaska.');
+      throw new Error('No data loaded for any site.');
     }
 
     statusDot.className = 'dot live';
     const now = new Date();
-    let statusMsg = `Data loaded — ${MODELS[selectedModel].name} model run | Updated ${now.toLocaleTimeString('en-US', {hour:'numeric', minute:'2-digit'})}`;
+    let statusMsg = isComposite
+      ? `Composite loaded — GFS + ECMWF | Updated ${now.toLocaleTimeString('en-US', {hour:'numeric', minute:'2-digit'})}`
+      : `Data loaded — ${MODELS[modelsToFetch[0]].name} model run | Updated ${now.toLocaleTimeString('en-US', {hour:'numeric', minute:'2-digit'})}`;
     if (fetchErrors.length > 0) {
-      statusMsg += ` | ⚠ ${fetchErrors.length} site(s) failed: ${fetchErrors.join('; ')}`;
+      statusMsg += ` | ⚠ ${fetchErrors.length} fetch(es) failed`;
     }
     statusText.textContent = statusMsg;
 
     renderCards();
     document.getElementById('disclaimer').style.display = 'block';
-    
-    // Enable export button
+
     const expBtn = document.getElementById('exportBtn');
     expBtn.disabled = false;
     expBtn.classList.add('export-ready');
 
   } catch (err) {
+    selectedModel = isComposite ? 'composite' : modelsToFetch[0];
     statusDot.className = 'dot';
     statusText.textContent = `Error: ${err.message}`;
     content.innerHTML = '<div class="empty-state"><div class="icon">⚠️</div><p>Failed to fetch forecast data. Check your internet connection and try again.</p></div>';
@@ -1302,13 +1411,23 @@ function findPeakHour(siteData, site, dateIdx) {
   let bestScore = -999;
 
   for (const idx of hours) {
-    const analysis = getCachedAnalysis(site.id, site, idx);
-    if (analysis.score > bestScore) {
+    const analysis = selectedModel === 'composite'
+      ? getCompositeResult(site.id, site, idx)
+      : getCachedAnalysis(site.id, site, idx);
+    if (analysis && analysis.score > bestScore) {
       bestScore = analysis.score;
       bestIdx = idx;
     }
   }
   return bestIdx;
+}
+
+// Helper to get the right analysis based on current mode
+function getAnalysisForDisplay(siteId, site, hourIdx) {
+  if (selectedModel === 'composite') {
+    return getCompositeResult(siteId, site, hourIdx);
+  }
+  return getCachedAnalysis(siteId, site, hourIdx);
 }
 
 // ================================================================
@@ -1339,12 +1458,22 @@ function renderCards() {
       continue;
     }
 
-    const analysis = getCachedAnalysis(site.id, site, hourIdx);
+    const analysis = getAnalysisForDisplay(site.id, site, hourIdx);
+    if (!analysis) continue;
     const hours = getBestHoursForDate(data, site, selectedDate);
     const isOpen = expandedCards[site.id] || false;
 
     const ratingLabel = analysis.rating === 'good' ? 'XC Potential' :
                         analysis.rating === 'caution' ? 'Marginal' : 'Unlikely';
+
+    // Build confidence badge for composite mode
+    const confidenceBadge = (selectedModel === 'composite' && analysis.confidence)
+      ? `<span style="font-family:'JetBrains Mono',monospace;font-size:0.6rem;padding:2px 6px;border-radius:3px;margin-left:4px;${
+          analysis.confidence === 'high' ? 'background:rgba(34,197,94,0.15);color:var(--accent-good);' :
+          analysis.confidence === 'moderate' ? 'background:rgba(245,158,11,0.15);color:var(--accent-caution);' :
+          'background:rgba(239,68,68,0.15);color:var(--accent-poor);'
+        }">${analysis.confidence === 'high' ? '✓ High' : analysis.confidence === 'moderate' ? '~ Med' : '⚠ Low'}</span>`
+      : '';
 
     html += `<div class="site-card rating-${analysis.rating}">
       <div class="card-header" onclick="toggleCard('${site.id}')">
@@ -1353,7 +1482,7 @@ function renderCards() {
           <span class="site-elev">${site.elevFt.toLocaleString()} ft</span>
         </div>
         <div style="display:flex;align-items:center;gap:0.75rem;">
-          <span class="rating-badge ${analysis.rating}">${ratingLabel} ${analysis.score}/100</span>
+          <span class="rating-badge ${analysis.rating}">${ratingLabel} ${analysis.score}/100${confidenceBadge}</span>
           <span class="toggle-arrow ${isOpen ? 'open' : ''}">▼</span>
         </div>
       </div>
@@ -1487,7 +1616,10 @@ function drawSoundingChart(site) {
   const ctx = canvas.getContext('2d');
   ctx.scale(dpr, dpr);
 
-  const analysis = getCachedAnalysis(site.id, site, hourIdx);
+  // Use GFS data for chart in composite mode (better vertical resolution)
+  const chartModelKey = selectedModel === 'composite' ? 'gfs' : selectedModel;
+  const analysis = getCachedAnalysis(site.id, site, hourIdx, chartModelKey);
+  if (!analysis) return;
   const levels = analysis.levels.filter(l => l.altM >= 0);
 
   if (levels.length < 2) return;
@@ -1828,7 +1960,8 @@ function drawSoundingChart(site) {
   ctx.fillStyle = 'rgba(255,255,255,0.4)';
   ctx.font = '10px JetBrains Mono, monospace';
   ctx.textAlign = 'right';
-  ctx.fillText(`${MODELS[selectedModel].name} | ${timeStr.slice(0,10)} ${h12}:00 ${ampm} AKDT`, margin.left + cw, legY);
+  const chartLabel = selectedModel === 'composite' ? 'GFS (composite)' : MODELS[selectedModel].name;
+  ctx.fillText(`${chartLabel} | ${timeStr.slice(0,10)} ${h12}:00 ${ampm} AKDT`, margin.left + cw, legY);
 }
 
 // ================================================================
@@ -1875,7 +2008,7 @@ function exportReport() {
       continue;
     }
 
-    const a = getCachedAnalysis(site.id, site, peakIdx);
+    const a = getAnalysisForDisplay(site.id, site, peakIdx);
     const timeLabel = data.hourly.time[peakIdx];
     const hr = parseInt(timeLabel.slice(11, 13));
     const ampm = hr >= 12 ? 'PM' : 'AM';
@@ -1917,7 +2050,7 @@ function exportReport() {
     if (!data) continue;
     const peakIdx = selectedHours[site.id] || findPeakHour(data, site, selectedDate);
     if (peakIdx === null) continue;
-    const a = getCachedAnalysis(site.id, site, peakIdx);
+    const a = getAnalysisForDisplay(site.id, site, peakIdx);
 
     forecastRows.push([`${site.name} (${a.score}/100 — ${a.rating})`]);
     for (const note of a.notes) {
@@ -1951,7 +2084,7 @@ function exportReport() {
         const data = forecastData[site.id];
         if (!data) { row.push(''); continue; }
         try {
-          const a = getCachedAnalysis(site.id, site, hi);
+          const a = getAnalysisForDisplay(site.id, site, hi);
           row.push(a.score);
         } catch { row.push(''); }
       }
