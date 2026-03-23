@@ -502,10 +502,10 @@ const SITES = [
     id: 'baldy',
     name: 'Baldy Towers',
     subtitle: 'Eagle River',
-    lat: 61.336556,
-    lon: -149.513861,
-    elevFt: 4100,
-    elevM: 1250,
+    lat: 61.336500,
+    lon: -149.513583,
+    elevFt: 1900,
+    elevM: 579,
     idealWindDir: [290, 340],   // W to NNW
     maxWind: 12,
     dangerWindDir: [45, 150],   // Strong east = severe turbulence along front range
@@ -530,8 +530,8 @@ const SITES = [
     subtitle: 'Hatcher Pass',
     lat: 61.774778,
     lon: -149.255306,
-    elevFt: 4500,
-    elevM: 1372,
+    elevFt: 3600,
+    elevM: 1097,
     idealWindDir: [140, 260],   // Bench: 140°-260°
     maxWind: 12,
     dangerWindDir: null,
@@ -1158,7 +1158,7 @@ function analyzeSounding(siteData, site, hourIdx) {
 
     if (result.ceilingType === 'stable' || ceilAglFt <= 0) {
       score -= 30;
-      result.notes.push({ label: 'Usable Ceiling ⚠', text: `${Math.round(ceilMslFt).toLocaleString()} ft MSL — BELOW launch. Atmosphere is stable above site. Sled ride at best.`, type: 'negative' });
+      result.notes.push({ label: 'Usable Ceiling ⚠', text: `Below launch elevation — atmosphere is stable above site. Sled ride at best.`, type: 'negative' });
     }
     else if (ceilAglFt > 4000) {
       score += 35;
@@ -1490,7 +1490,7 @@ function renderCards() {
       <div class="summary-row">
         <div class="summary-item">
           <div class="summary-label">Usable Ceiling</div>
-          <div class="summary-value ${analysis.ceiling && analysis.ceiling.aglFt > 3000 ? 'good' : analysis.ceiling && analysis.ceiling.aglFt > 500 ? 'caution' : 'poor'}">${analysis.ceiling ? Math.round(analysis.ceiling.altFt).toLocaleString() + ' ft' : '—'}</div>
+          <div class="summary-value ${analysis.ceiling && analysis.ceiling.aglFt > 3000 ? 'good' : analysis.ceiling && analysis.ceiling.aglFt > 500 ? 'caution' : 'poor'}">${analysis.ceiling ? (analysis.ceiling.aglFt <= 0 ? 'Below launch' : Math.round(analysis.ceiling.altFt).toLocaleString() + ' ft') : '—'}</div>
         </div>
         <div class="summary-item">
           <div class="summary-label">Day Type</div>
@@ -2019,7 +2019,7 @@ function exportReport() {
       site.elevFt,
       a.score,
       a.rating === 'good' ? 'XC Potential' : a.rating === 'caution' ? 'Marginal' : 'Unlikely',
-      a.ceiling ? Math.round(a.ceiling.altFt) : '',
+      a.ceiling ? (a.ceiling.aglFt <= 0 ? 'Below launch' : Math.round(a.ceiling.altFt)) : '',
       a.ceilingType === 'cu' ? 'Cu' : a.ceilingType === 'blue' ? 'Blue' : a.ceilingType === 'stable' ? 'Stable' : '',
       a.thermalTop ? Math.round(a.thermalTop.altFt) : '',
       a.cloudBase ? Math.round(a.cloudBase.altFt) : '',
