@@ -1808,8 +1808,9 @@ function drawSoundingChart(site) {
 
   // ── Dry Adiabat from surface ──
   const surfTempC = (analysis.surfaceTemp - 32) * 5 / 9;
-  ctx.strokeStyle = 'rgba(245,158,11,0.15)';
-  ctx.lineWidth = 1;
+  ctx.strokeStyle = 'rgba(245,158,11,0.55)';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([6, 4]);
   ctx.beginPath();
   for (let alt = site.elevFt; alt <= aMax; alt += 200) {
     const altAboveM = (alt - site.elevFt) / 3.281;
@@ -1821,6 +1822,7 @@ function drawSoundingChart(site) {
     else ctx.lineTo(x, y);
   }
   ctx.stroke();
+  ctx.setLineDash([]);
 
   // ── Temperature Line ──
   ctx.strokeStyle = '#ef4444';
@@ -1947,7 +1949,7 @@ function drawSoundingChart(site) {
   ctx.fillStyle = 'rgba(255,255,255,0.5)';
   ctx.fillText('Dewpoint', margin.left + 80, legY);
 
-  ctx.fillStyle = 'rgba(245,158,11,0.3)';
+  ctx.fillStyle = 'rgba(245,158,11,0.55)';
   ctx.fillRect(margin.left + 145, legY - 4, 14, 2);
   ctx.fillStyle = 'rgba(255,255,255,0.5)';
   ctx.fillText('Dry Adiabat', margin.left + 163, legY);
