@@ -594,19 +594,14 @@ let analysisCache = {}; // cache keyed by "siteId-hourIdx-model" to avoid redund
 let compositeResults = {}; // cached composite results keyed by "siteId-hourIdx"
 
 function getCachedAnalysis(siteId, site, hourIdx, modelKey) {
-  const mKey = modelKey || selectedModel;
-  const dataSource = mKey === 'ecmwf' ? (forecastDataAlt[siteId] ? forecastDataAlt : forecastData) : forecastData;
-  // In composite mode, GFS is primary (forecastData), ECMWF is alt (forecastDataAlt)
+  const mKey = modelKey || (selectedModel === 'composite' ? 'gfs' : selectedModel);
   const src = (selectedModel === 'composite')
     ? (mKey === 'ecmwf' ? forecastDataAlt : forecastData)
     : forecastData;
   if (!src[siteId]) return null;
   const key = `${siteId}-${hourIdx}-${mKey}`;
   if (!analysisCache[key]) {
-    const savedModel = selectedModel;
-    selectedModel = mKey; // temporarily set for model-specific level lookups
-    analysisCache[key] = analyzeSounding(src[siteId], site, hourIdx);
-    selectedModel = savedModel;
+    analysisCache[key] = analyzeSounding(src[siteId], site, hourIdx, mKey);
   }
   return analysisCache[key];
 }
@@ -685,24 +680,51 @@ function getCompositeResult(siteId, site, hourIdx) {
 // ================================================================
 // DATE SELECTOR
 // ================================================================
+
+// Get current date string in Anchorage timezone (YYYY-MM-DD)
+function getAnchorageDateStr(offsetDays) {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Anchorage',
+    year: 'numeric', month: '2-digit', day: '2-digit'
+  });
+  const d = new Date();
+  d.setDate(d.getDate() + (offsetDays || 0));
+  return formatter.format(d); // returns YYYY-MM-DD in en-CA locale
+}
+
+// Get available forecast dates from API response time strings
+function getAvailableDates() {
+  // Find a site with data
+  const siteId = SITES.find(s => forecastData[s.id])?.id;
+  if (!siteId) return null;
+  const times = forecastData[siteId].hourly.time;
+  // Extract unique date strings (already in Anchorage time from API)
+  const dates = [...new Set(times.map(t => t.slice(0, 10)))].sort();
+  return dates;
+}
+
 function initDateSelector() {
   const container = document.getElementById('dateSelector');
-  const now = new Date();
   for (let d = 0; d < 3; d++) {
-    const date = new Date(now);
-    date.setDate(date.getDate() + d);
+    const dateStr = getAnchorageDateStr(d);
     const btn = document.createElement('button');
     btn.className = 'date-btn' + (d === selectedDate ? ' active' : '');
-    const label = d === 0 ? 'Today' : d === 1 ? 'Tomorrow' : date.toLocaleDateString('en-US', {weekday:'short', month:'short', day:'numeric'});
+
+    // Label: Today, Tomorrow, or weekday
+    let label;
+    if (d === 0) label = 'Today';
+    else if (d === 1) label = 'Tomorrow';
+    else {
+      const parts = dateStr.split('-');
+      const dateObj = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+      label = dateObj.toLocaleDateString('en-US', {weekday:'short', month:'short', day:'numeric'});
+    }
     btn.textContent = label;
+
     btn.onclick = () => {
       selectedDate = d;
       container.querySelectorAll('.date-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
-      // Warn if HRRR and day 2+
-      if (selectedModel === 'hrrr' && d >= 2) {
-        document.getElementById('statusText').textContent = 'Note: HRRR only forecasts 48h out — data may be limited for this date.';
-      }
       if (Object.keys(forecastData).length > 0) renderCards();
     };
     container.appendChild(btn);
@@ -796,14 +818,10 @@ async function fetchForecast() {
         let attempts = 0;
         while (attempts < 3) {
           try {
-            const savedModel = selectedModel;
-            selectedModel = modelKey; // temporarily set for fetchSiteData
-            const data = await fetchSiteData(site);
-            selectedModel = savedModel;
+            const data = await fetchSiteData(site, modelKey);
             targetStore[site.id] = data;
             break;
           } catch (e) {
-            if (selectedModel !== modelKey) selectedModel = isComposite ? 'composite' : modelKey;
             if ((e.message.includes('429') || e.message.includes('400')) && attempts < 2) {
               attempts++;
               statusText.textContent = `Error on ${site.name} (${modelLabel}) — retrying in ${attempts * 2}s…`;
@@ -820,9 +838,6 @@ async function fetchForecast() {
         }
       }
     }
-
-    // Restore selectedModel
-    selectedModel = isComposite ? 'composite' : modelsToFetch[0];
 
     const loadedCount = Object.keys(forecastData).length;
     if (loadedCount === 0) {
@@ -847,7 +862,6 @@ async function fetchForecast() {
     expBtn.classList.add('export-ready');
 
   } catch (err) {
-    selectedModel = isComposite ? 'composite' : modelsToFetch[0];
     statusDot.className = 'dot';
     statusText.textContent = `Error: ${err.message}`;
     content.innerHTML = '<div class="empty-state"><div class="icon">⚠️</div><p>Failed to fetch forecast data. Check your internet connection and try again.</p></div>';
@@ -857,11 +871,11 @@ async function fetchForecast() {
   btn.innerHTML = 'Analyze Soundings';
 }
 
-async function fetchSiteData(site) {
-  const model = MODELS[selectedModel];
+async function fetchSiteData(site, modelKey) {
+  const model = MODELS[modelKey];
 
   // Use model-specific pressure levels if defined, otherwise global P_LEVELS
-  const levels = model.levels || P_LEVELS;
+  const levels = model.levels ?? P_LEVELS;
 
   // Build pressure-level variable list
   const tempVars = levels.map(p => `temperature_${p}hPa`).join(',');
@@ -922,18 +936,23 @@ function degToCompass(deg) {
 // ================================================================
 // ANALYSIS ENGINE
 // ================================================================
-function analyzeSounding(siteData, site, hourIdx) {
+function analyzeSounding(siteData, site, hourIdx, modelKey) {
+  const mKey = modelKey || (selectedModel === 'composite' ? 'gfs' : selectedModel);
   const h = siteData.hourly;
+
+  // Safe field access — guard against missing/null API fields
+  const safeNum = (arr, idx) => (arr && idx < arr.length && arr[idx] != null) ? arr[idx] : null;
+
   const result = {
     time: h.time[hourIdx],
-    surfaceTemp: h.temperature_2m[hourIdx],
-    surfaceDew: h.dewpoint_2m[hourIdx],
-    cloudCover: h.cloudcover[hourIdx],
-    precip: h.precipitation[hourIdx],
-    surfaceWind: h.windspeed_10m[hourIdx],
-    surfaceWindDir: h.winddirection_10m[hourIdx],
-    cape: h.cape ? h.cape[hourIdx] : null,
-    liftedIndex: h.lifted_index ? h.lifted_index[hourIdx] : null,
+    surfaceTemp: safeNum(h.temperature_2m, hourIdx),
+    surfaceDew: safeNum(h.dewpoint_2m, hourIdx),
+    cloudCover: safeNum(h.cloudcover, hourIdx),
+    precip: safeNum(h.precipitation, hourIdx),
+    surfaceWind: safeNum(h.windspeed_10m, hourIdx),
+    surfaceWindDir: safeNum(h.winddirection_10m, hourIdx),
+    cape: safeNum(h.cape, hourIdx),
+    liftedIndex: safeNum(h.lifted_index, hourIdx),
     levels: [],
     thermalTop: null,
     cloudBase: null,
@@ -944,16 +963,22 @@ function analyzeSounding(siteData, site, hourIdx) {
     notes: []
   };
 
-  // Build sounding profile — use model-specific levels
-  const modelLevels = MODELS[selectedModel].levels || P_LEVELS;
-  for (const p of modelLevels) {
-    const temp = h[`temperature_${p}hPa`] ? h[`temperature_${p}hPa`][hourIdx] : null;
-    const dew = h[`dewpoint_${p}hPa`] ? h[`dewpoint_${p}hPa`][hourIdx] : null;
-    const ws = h[`windspeed_${p}hPa`] ? h[`windspeed_${p}hPa`][hourIdx] : null;
-    const wd = h[`winddirection_${p}hPa`] ? h[`winddirection_${p}hPa`][hourIdx] : null;
-    const geo = h[`geopotential_height_${p}hPa`] ? h[`geopotential_height_${p}hPa`][hourIdx] : null;
+  // If surface temp is missing, can't do anything useful
+  if (result.surfaceTemp == null) {
+    result.notes.push({ label: 'Data', text: 'Surface temperature unavailable for this hour', type: 'negative' });
+    return result;
+  }
 
-    if (temp !== null && geo !== null) {
+  // Build sounding profile — use model-specific levels via explicit modelKey
+  const modelLevels = (MODELS[mKey] && MODELS[mKey].levels) ?? P_LEVELS;
+  for (const p of modelLevels) {
+    const temp = safeNum(h[`temperature_${p}hPa`], hourIdx);
+    const dew = safeNum(h[`dewpoint_${p}hPa`], hourIdx);
+    const ws = safeNum(h[`windspeed_${p}hPa`], hourIdx);
+    const wd = safeNum(h[`winddirection_${p}hPa`], hourIdx);
+    const geo = safeNum(h[`geopotential_height_${p}hPa`], hourIdx);
+
+    if (temp != null && geo != null) {
       result.levels.push({
         pressure: p,
         tempF: temp,
@@ -1009,13 +1034,15 @@ function analyzeSounding(siteData, site, hourIdx) {
   }
 
   // ── Cloud Base (LCL estimate via dew point depression) ──
-  const dewDepC = surfTempC - ((result.surfaceDew - 32) * 5 / 9);
-  const lclAglM = dewDepC / 2.5 * 304.8; // rough: 400ft per 1°C spread, using 2.5°C/1000ft
-  result.cloudBase = {
-    altM: site.elevM + lclAglM,
-    altFt: (site.elevM + lclAglM) * 3.281,
-    aglFt: lclAglM * 3.281
-  };
+  if (result.surfaceDew != null) {
+    const dewDepC = surfTempC - ((result.surfaceDew - 32) * 5 / 9);
+    const lclAglM = dewDepC / 2.5 * 304.8; // rough: 400ft per 1°C spread, using 2.5°C/1000ft
+    result.cloudBase = {
+      altM: site.elevM + lclAglM,
+      altFt: (site.elevM + lclAglM) * 3.281,
+      aglFt: lclAglM * 3.281
+    };
+  }
 
   // ── Usable Ceiling ──
   // The flyable thermal ceiling is the lower of thermal top and cloud base.
@@ -1236,11 +1263,13 @@ function analyzeSounding(siteData, site, hourIdx) {
     }
 
     // Surface wind note (LZ conditions)
-    result.notes.push({
-      label: 'Surface Wind (LZ)',
-      text: `${Math.round(result.surfaceWind)} mph from ${result.surfaceWindDir !== null ? degToCompass(result.surfaceWindDir) : '?'} — model 10m surface wind (LZ estimate)`,
-      type: result.surfaceWind < 12 ? 'positive' : result.surfaceWind < 20 ? 'neutral' : 'negative'
-    });
+    if (result.surfaceWind != null) {
+      result.notes.push({
+        label: 'Surface Wind (LZ)',
+        text: `${Math.round(result.surfaceWind)} mph from ${result.surfaceWindDir != null ? degToCompass(result.surfaceWindDir) : '?'} — model 10m surface wind (LZ estimate)`,
+        type: result.surfaceWind < 12 ? 'positive' : result.surfaceWind < 20 ? 'neutral' : 'negative'
+      });
+    }
   }
 
   // Wind DIRECTION scoring (site-specific from AAW guides)
@@ -1320,7 +1349,7 @@ function analyzeSounding(siteData, site, hourIdx) {
   }
 
   // Precipitation penalty
-  if (result.precip > 0.1) {
+  if (result.precip != null && result.precip > 0.1) {
     score -= 20;
     result.notes.push({ label: 'Precip', text: `${result.precip.toFixed(1)} mm/hr — active precipitation`, type: 'negative' });
   }
@@ -1386,11 +1415,10 @@ function analyzeSounding(siteData, site, hourIdx) {
 // ================================================================
 function getBestHoursForDate(siteData, site, dateIdx) {
   const h = siteData.hourly;
-  const targetDate = new Date();
-  targetDate.setDate(targetDate.getDate() + dateIdx);
-  const dateStr = targetDate.toISOString().slice(0, 10);
+  // Use Anchorage-local date to match API time strings (which are in Anchorage time)
+  const dateStr = getAnchorageDateStr(dateIdx);
 
-  // Find hour indices for target date, thermal hours only (9am–7pm AKDT)
+  // Find hour indices for target date, thermal hours only (9am–7pm AKST/AKDT)
   const validHours = [];
   for (let i = 0; i < h.time.length; i++) {
     if (h.time[i].startsWith(dateStr)) {
@@ -1443,7 +1471,7 @@ function renderCards() {
 
     const peakIdx = findPeakHour(data, site, selectedDate);
     if (!selectedHours[site.id]) selectedHours[site.id] = peakIdx;
-    const hourIdx = selectedHours[site.id] || peakIdx;
+    const hourIdx = selectedHours[site.id] ?? peakIdx;
 
     if (hourIdx === null) {
       html += `<div class="site-card">
@@ -1963,7 +1991,9 @@ function drawSoundingChart(site) {
   ctx.font = '10px JetBrains Mono, monospace';
   ctx.textAlign = 'right';
   const chartLabel = selectedModel === 'composite' ? 'GFS (composite)' : MODELS[selectedModel].name;
-  ctx.fillText(`${chartLabel} | ${timeStr.slice(0,10)} ${h12}:00 ${ampm} AKDT`, margin.left + cw, legY);
+  // Determine AKST vs AKDT dynamically
+  const tzAbbr = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Anchorage', timeZoneName: 'short' }).formatToParts(new Date()).find(p => p.type === 'timeZoneName')?.value || 'AK';
+  ctx.fillText(`${chartLabel} | ${timeStr.slice(0,10)} ${h12}:00 ${ampm} ${tzAbbr}`, margin.left + cw, legY);
 }
 
 // ================================================================
@@ -1972,18 +2002,19 @@ function drawSoundingChart(site) {
 function exportReport() {
   if (Object.keys(forecastData).length === 0) return;
 
-  const model = MODELS[selectedModel];
-  const targetDate = new Date();
-  targetDate.setDate(targetDate.getDate() + selectedDate);
-  const dateStr = targetDate.toISOString().slice(0, 10);
+  const model = MODELS[selectedModel === 'composite' ? 'gfs' : selectedModel];
+  const dateStr = getAnchorageDateStr(selectedDate);
   const now = new Date();
+
+  const modelLabel = selectedModel === 'composite' ? 'Composite (GFS+ECMWF)' : model.name;
+  const modelRes = selectedModel === 'composite' ? 'GFS 28km + ECMWF 9km' : model.resolution;
 
   // ── Build Forecast Data sheet ──
   const forecastRows = [];
   
   // Header rows
   forecastRows.push(['AK XC Forecast Report']);
-  forecastRows.push([`Forecast Date: ${dateStr}`, '', `Model: ${model.name} (${model.resolution})`, '', `Generated: ${now.toLocaleString('en-US', {timeZone:'America/Anchorage'})}`]);
+  forecastRows.push([`Forecast Date: ${dateStr}`, '', `Model: ${modelLabel} (${modelRes})`, '', `Generated: ${now.toLocaleString('en-US', {timeZone:'America/Anchorage'})}`]);
   forecastRows.push([]);
   
   // Column headers
@@ -2029,7 +2060,7 @@ function exportReport() {
       a.windProfile.range || '',
       a.windProfile.launchWind ? degToCompass(a.windProfile.launchWind.dir) + ' ' + Math.round(a.windProfile.launchWind.dir) + '°' : '',
       a.windProfile.shear ? 'YES' : 'No',
-      Math.round(a.surfaceWind),
+      a.surfaceWind != null ? Math.round(a.surfaceWind) : '',
       a.cloudCover !== null ? Math.round(a.cloudCover) : '',
       a.cape !== null ? Math.round(a.cape) : '',
       `${h12}:00 ${ampm}`,
@@ -2063,7 +2094,7 @@ function exportReport() {
 
   // ── Build Hourly Breakdown sheet ──
   const hourlyRows = [];
-  hourlyRows.push(['Hourly Score Breakdown by Site', '', `Date: ${dateStr}`, '', `Model: ${model.name}`]);
+  hourlyRows.push(['Hourly Score Breakdown by Site', '', `Date: ${dateStr}`, '', `Model: ${modelLabel}`]);
   hourlyRows.push([]);
   
   // Header
@@ -2119,7 +2150,7 @@ function exportReport() {
   XLSX.utils.book_append_sheet(wb, ws2, 'Hourly Scores');
 
   // ── Download ──
-  const filename = `AK_XC_Forecast_${dateStr}_${model.name}.xlsx`;
+  const filename = `AK_XC_Forecast_${dateStr}_${selectedModel === 'composite' ? 'Composite' : model.name}.xlsx`;
   XLSX.writeFile(wb, filename);
 }
 
