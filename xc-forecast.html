@@ -454,26 +454,36 @@
   <span id="statusText">Ready — press Analyze Soundings to fetch tomorrow's forecast data</span>
 </div>
 
-<!-- Real-Time Observed Lapse Rate Box -->
+<!-- Real-Time Observed Station Data -->
 <div id="obsLapseBox" style="max-width:1280px;margin:0 auto;padding:0.75rem 2rem;">
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;max-width:700px;">
-    <!-- Anchorage / Chugach pair -->
+  <div id="obsContent" style="display:none;grid-template-columns:1fr 1fr 1fr;gap:1rem;">
+    <!-- Anchorage / Chugach temp pair -->
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:0.85rem 1rem;">
       <div style="font-family:'JetBrains Mono',monospace;font-size:0.6rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:0.5rem;">Observed Temps — Chugach Front Range</div>
       <div id="obsChugach" style="font-family:'JetBrains Mono',monospace;">
-        <div style="font-size:0.72rem;color:var(--text-dim);">Loading station data…</div>
+        <div style="font-size:0.72rem;color:var(--text-dim);">Loading…</div>
       </div>
     </div>
-    <!-- Hatcher Pass pair -->
+    <!-- Hatcher Pass temp pair -->
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:0.85rem 1rem;">
       <div style="font-family:'JetBrains Mono',monospace;font-size:0.6rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:0.5rem;">Observed Temps — Hatcher Pass</div>
       <div id="obsHatcher" style="font-family:'JetBrains Mono',monospace;">
-        <div style="font-size:0.72rem;color:var(--text-dim);">Loading station data…</div>
+        <div style="font-size:0.72rem;color:var(--text-dim);">Loading…</div>
+      </div>
+    </div>
+    <!-- Ridge Wind Stations -->
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:0.85rem 1rem;">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:0.6rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:0.5rem;">Observed Ridge Wind</div>
+      <div id="obsWind" style="font-family:'JetBrains Mono',monospace;">
+        <div style="font-size:0.72rem;color:var(--text-dim);">Loading…</div>
       </div>
     </div>
   </div>
-  <div style="font-family:'JetBrains Mono',monospace;font-size:0.58rem;color:var(--text-dim);margin-top:0.4rem;">
+  <div id="obsFooter" style="display:none;font-family:'JetBrains Mono',monospace;font-size:0.58rem;color:var(--text-dim);margin-top:0.4rem;">
     Live observations via Synoptic/CNFAIC • <span id="obsTimestamp">—</span> • <a href="#" onclick="fetchObservedLapse();return false;" style="color:var(--accent-blue);text-decoration:none;">↻ Refresh</a>
+  </div>
+  <div id="obsButton">
+    <button onclick="loadLiveObs()" class="fetch-btn" style="background:var(--surface2);color:var(--text-muted);font-size:0.75rem;padding:0.4rem 1.2rem;border:1px solid var(--border);">Load Live Station Data</button>
   </div>
 </div>
 
@@ -2199,12 +2209,27 @@ const OBS_PAIRS = [
   }
 ];
 
+const WIND_STATIONS = [
+  { stid: 'PKTA2', name: 'Peak 3', elevFt: 3955 },
+  { stid: 'ARCA2', name: 'Arctic Valley', elevFt: 3510 }
+];
+
+async function loadLiveObs() {
+  // Hide button, show the data boxes
+  document.getElementById('obsButton').style.display = 'none';
+  document.getElementById('obsContent').style.display = 'grid';
+  document.getElementById('obsFooter').style.display = 'block';
+  await fetchObservedLapse();
+}
+
 async function fetchObservedLapse() {
-  // Collect all station IDs
-  const allStids = OBS_PAIRS.flatMap(p => [p.low.stid, p.high.stid]).join(',');
+  // Collect all station IDs — temp pairs plus wind stations
+  const tempStids = OBS_PAIRS.flatMap(p => [p.low.stid, p.high.stid]);
+  const windStids = WIND_STATIONS.map(s => s.stid);
+  const allStids = [...new Set([...tempStids, ...windStids])].join(',');
 
   try {
-    const url = `https://api.synopticdata.com/v2/stations/latest?token=${SYNOPTIC_TOKEN}&stid=${allStids}&vars=air_temp&units=temp|F&within=120&obtimezone=local`;
+    const url = `https://api.synopticdata.com/v2/stations/latest?token=${SYNOPTIC_TOKEN}&stid=${allStids}&vars=air_temp,wind_speed,wind_direction,wind_gust&units=temp|F,speed|mph&within=120&obtimezone=local`;
     const resp = await fetch(url);
     if (!resp.ok) throw new Error(`Synoptic API error: ${resp.status}`);
     const data = await resp.json();
@@ -2217,11 +2242,16 @@ async function fetchObservedLapse() {
     const stationMap = {};
     for (const stn of (data.STATION ?? [])) {
       const tempObj = stn.OBSERVATIONS?.air_temp_value_1;
+      const windSpdObj = stn.OBSERVATIONS?.wind_speed_value_1;
+      const windDirObj = stn.OBSERVATIONS?.wind_direction_value_1;
+      const windGustObj = stn.OBSERVATIONS?.wind_gust_value_1;
       stationMap[stn.STID] = {
         name: stn.NAME,
         tempF: tempObj?.value ?? null,
-        time: tempObj?.date_time ?? null,
-        elevFt: parseFloat(stn.ELEVATION) || null
+        windSpd: windSpdObj?.value ?? null,
+        windDir: windDirObj?.value ?? null,
+        windGust: windGustObj?.value ?? null,
+        time: tempObj?.date_time ?? windSpdObj?.date_time ?? null
       };
     }
 
@@ -2261,6 +2291,47 @@ async function fetchObservedLapse() {
       `;
     }
 
+    // ── Render wind stations ──
+    const windContainer = document.getElementById('obsWind');
+    let windHtml = '';
+
+    for (const ws of WIND_STATIONS) {
+      const stnData = stationMap[ws.stid];
+
+      if (!stnData || stnData.windSpd == null) {
+        windHtml += `<div style="font-size:0.72rem;color:var(--accent-caution);margin-bottom:0.4rem;">⚠ ${ws.name}: no recent data</div>`;
+        continue;
+      }
+
+      const spd = stnData.windSpd;
+      const gust = stnData.windGust;
+      const dir = stnData.windDir;
+      const dirLabel = dir != null ? degToCompass(dir) : '?';
+
+      // SE warning: direction 120°-170° and gusts over 10 mph
+      const isSEDanger = dir != null && gust != null && dir >= 120 && dir <= 170 && gust > 10;
+      const isStrong = (gust ?? spd) > 20;
+
+      const windColor = isSEDanger ? 'var(--accent-poor)' : isStrong ? 'var(--accent-caution)' : 'var(--text)';
+
+      windHtml += `
+        <div style="margin-bottom:0.5rem;">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;">
+            <span style="font-size:0.65rem;color:var(--text-dim);">${ws.name}</span>
+            <span style="font-size:0.6rem;color:var(--text-dim);">${ws.elevFt.toLocaleString()}ft</span>
+          </div>
+          <div style="display:flex;align-items:baseline;gap:0.5rem;margin-top:0.15rem;">
+            <span style="font-size:1rem;font-weight:600;color:${windColor};">${Math.round(spd)} mph</span>
+            <span style="font-size:0.7rem;color:${windColor};">${dirLabel} ${dir != null ? Math.round(dir) + '°' : ''}</span>
+            ${gust != null ? `<span style="font-size:0.65rem;color:${windColor};">G${Math.round(gust)}</span>` : ''}
+          </div>
+          ${isSEDanger ? `<div style="font-size:0.62rem;color:var(--accent-poor);margin-top:0.2rem;font-weight:500;">⚠ SE GUSTS >10 — expect rotor on front range</div>` : ''}
+        </div>
+      `;
+    }
+
+    windContainer.innerHTML = windHtml;
+
     // Update timestamp
     const tsEl = document.getElementById('obsTimestamp');
     const now = new Date();
@@ -2279,7 +2350,6 @@ async function fetchObservedLapse() {
 initDateSelector();
 initModelSelector();
 updateModelInfo();
-fetchObservedLapse();
 </script>
 </body>
 </html>
