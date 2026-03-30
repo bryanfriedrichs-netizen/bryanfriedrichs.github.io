@@ -454,6 +454,29 @@
   <span id="statusText">Ready — press Analyze Soundings to fetch tomorrow's forecast data</span>
 </div>
 
+<!-- Real-Time Observed Lapse Rate Box -->
+<div id="obsLapseBox" style="max-width:1280px;margin:0 auto;padding:0.75rem 2rem;">
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;max-width:700px;">
+    <!-- Anchorage / Chugach pair -->
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:0.85rem 1rem;">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:0.6rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:0.5rem;">Observed Lapse — Chugach Front Range</div>
+      <div id="obsChugach" style="font-family:'JetBrains Mono',monospace;">
+        <div style="font-size:0.72rem;color:var(--text-dim);">Loading station data…</div>
+      </div>
+    </div>
+    <!-- Hatcher Pass pair -->
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:0.85rem 1rem;">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:0.6rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:0.5rem;">Observed Lapse — Hatcher Pass</div>
+      <div id="obsHatcher" style="font-family:'JetBrains Mono',monospace;">
+        <div style="font-size:0.72rem;color:var(--text-dim);">Loading station data…</div>
+      </div>
+    </div>
+  </div>
+  <div style="font-family:'JetBrains Mono',monospace;font-size:0.58rem;color:var(--text-dim);margin-top:0.4rem;">
+    Live observations via Synoptic/CNFAIC • <span id="obsTimestamp">—</span> • <a href="#" onclick="fetchObservedLapse();return false;" style="color:var(--accent-blue);text-decoration:none;">↻ Refresh</a>
+  </div>
+</div>
+
 <div id="content">
   <div class="empty-state">
     <div class="icon">🌤️</div>
@@ -2155,11 +2178,114 @@ function exportReport() {
 }
 
 // ================================================================
+// REAL-TIME OBSERVED LAPSE RATE
+// ================================================================
+const SYNOPTIC_TOKEN = '8fede4f06f534acaa5e8d885556fca60';
+
+const OBS_PAIRS = [
+  {
+    id: 'chugach',
+    name: 'Chugach Front Range',
+    el: 'obsChugach',
+    low: { stid: 'GAHA2', name: 'Glen Alps', elevFt: 2192 },
+    high: { stid: 'PKTA2', name: 'Peak 3', elevFt: 3955 }
+  },
+  {
+    id: 'hatcher',
+    name: 'Hatcher Pass',
+    el: 'obsHatcher',
+    low: { stid: 'HPSA2', name: 'Hatcher Pass Stn', elevFt: 2365 },
+    high: { stid: 'MMRA2', name: 'Marmot Ridge', elevFt: 4500 }
+  }
+];
+
+async function fetchObservedLapse() {
+  // Collect all station IDs
+  const allStids = OBS_PAIRS.flatMap(p => [p.low.stid, p.high.stid]).join(',');
+
+  try {
+    const url = `https://api.synopticdata.com/v2/stations/latest?token=${SYNOPTIC_TOKEN}&stid=${allStids}&vars=air_temp&units=temp|F&within=120&obtimezone=local`;
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error(`Synoptic API error: ${resp.status}`);
+    const data = await resp.json();
+
+    if (data.SUMMARY?.RESPONSE_CODE !== 1) {
+      throw new Error(data.SUMMARY?.RESPONSE_MESSAGE ?? 'Unknown API error');
+    }
+
+    // Build lookup by station ID
+    const stationMap = {};
+    for (const stn of (data.STATION ?? [])) {
+      const tempObj = stn.OBSERVATIONS?.air_temp_value_1;
+      stationMap[stn.STID] = {
+        name: stn.NAME,
+        tempF: tempObj?.value ?? null,
+        time: tempObj?.date_time ?? null,
+        elevFt: parseFloat(stn.ELEVATION) || null
+      };
+    }
+
+    // Render each pair
+    for (const pair of OBS_PAIRS) {
+      const container = document.getElementById(pair.el);
+      const lowData = stationMap[pair.low.stid];
+      const highData = stationMap[pair.high.stid];
+
+      if (!lowData?.tempF || !highData?.tempF) {
+        const missing = [];
+        if (!lowData?.tempF) missing.push(pair.low.name);
+        if (!highData?.tempF) missing.push(pair.high.name);
+        container.innerHTML = `<div style="font-size:0.72rem;color:var(--accent-caution);">⚠ No recent data: ${missing.join(', ')}</div>`;
+        continue;
+      }
+
+      // Use station-reported elevation if available, fall back to our defined values
+      const lowElev = lowData.elevFt ?? pair.low.elevFt;
+      const highElev = highData.elevFt ?? pair.high.elevFt;
+      const elevDiffFt = highElev - lowElev;
+      const elevDiffM = elevDiffFt / 3.281;
+      const tempDiffF = lowData.tempF - highData.tempF;
+      const tempDiffC = tempDiffF * 5 / 9;
+      const lapseRate = elevDiffM > 0 ? (tempDiffC / (elevDiffM / 1000)) : null;
+
+      // Determine quality
+      let lapseColor, lapseLabel;
+      if (lapseRate === null) { lapseColor = 'var(--text-dim)'; lapseLabel = ''; }
+      else if (lapseRate >= 7.5) { lapseColor = 'var(--accent-good)'; lapseLabel = 'steep — strong thermals'; }
+      else if (lapseRate >= 6) { lapseColor = 'var(--accent-caution)'; lapseLabel = 'moderate'; }
+      else { lapseColor = 'var(--accent-poor)'; lapseLabel = 'stable'; }
+
+      container.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:0.35rem;">
+          <span style="font-size:1.3rem;font-weight:600;color:${lapseColor};">${lapseRate !== null ? lapseRate.toFixed(1) : '—'}<span style="font-size:0.7rem;font-weight:400;"> °C/km</span></span>
+          <span style="font-size:0.65rem;color:${lapseColor};">${lapseLabel}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:0.65rem;color:var(--text-muted);">
+          <span>${pair.low.name} ${Math.round(lowData.tempF)}°F <span style="color:var(--text-dim);">${Math.round(lowElev).toLocaleString()}ft</span></span>
+          <span>${pair.high.name} ${Math.round(highData.tempF)}°F <span style="color:var(--text-dim);">${Math.round(highElev).toLocaleString()}ft</span></span>
+        </div>
+      `;
+    }
+
+    // Update timestamp
+    const tsEl = document.getElementById('obsTimestamp');
+    const now = new Date();
+    tsEl.textContent = `Updated ${now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/Anchorage' })}`;
+
+  } catch (err) {
+    for (const pair of OBS_PAIRS) {
+      document.getElementById(pair.el).innerHTML = `<div style="font-size:0.72rem;color:var(--accent-poor);">⚠ ${err.message}</div>`;
+    }
+  }
+}
+
+// ================================================================
 // INIT
 // ================================================================
 initDateSelector();
 initModelSelector();
 updateModelInfo();
+fetchObservedLapse();
 </script>
 </body>
 </html>
