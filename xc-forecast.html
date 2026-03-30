@@ -459,14 +459,14 @@
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;max-width:700px;">
     <!-- Anchorage / Chugach pair -->
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:0.85rem 1rem;">
-      <div style="font-family:'JetBrains Mono',monospace;font-size:0.6rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:0.5rem;">Observed Lapse — Chugach Front Range</div>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:0.6rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:0.5rem;">Observed Temps — Chugach Front Range</div>
       <div id="obsChugach" style="font-family:'JetBrains Mono',monospace;">
         <div style="font-size:0.72rem;color:var(--text-dim);">Loading station data…</div>
       </div>
     </div>
     <!-- Hatcher Pass pair -->
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:0.85rem 1rem;">
-      <div style="font-family:'JetBrains Mono',monospace;font-size:0.6rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:0.5rem;">Observed Lapse — Hatcher Pass</div>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:0.6rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:0.5rem;">Observed Temps — Hatcher Pass</div>
       <div id="obsHatcher" style="font-family:'JetBrains Mono',monospace;">
         <div style="font-size:0.72rem;color:var(--text-dim);">Loading station data…</div>
       </div>
@@ -2194,7 +2194,7 @@ const OBS_PAIRS = [
     id: 'hatcher',
     name: 'Hatcher Pass',
     el: 'obsHatcher',
-    low: { stid: 'HPSA2', name: 'Hatcher Pass Stn', elevFt: 2365 },
+    low: { stid: 'HPSA2', name: 'Lower Marmot Lot', elevFt: 2365 },
     high: { stid: 'MMRA2', name: 'Marmot Ridge', elevFt: 4500 }
   }
 ];
@@ -2239,30 +2239,24 @@ async function fetchObservedLapse() {
         continue;
       }
 
-      // Use station-reported elevation if available, fall back to our defined values
-      const lowElev = lowData.elevFt ?? pair.low.elevFt;
-      const highElev = highData.elevFt ?? pair.high.elevFt;
-      const elevDiffFt = highElev - lowElev;
-      const elevDiffM = elevDiffFt / 3.281;
       const tempDiffF = lowData.tempF - highData.tempF;
-      const tempDiffC = tempDiffF * 5 / 9;
-      const lapseRate = elevDiffM > 0 ? (tempDiffC / (elevDiffM / 1000)) : null;
-
-      // Determine quality
-      let lapseColor, lapseLabel;
-      if (lapseRate === null) { lapseColor = 'var(--text-dim)'; lapseLabel = ''; }
-      else if (lapseRate >= 7.5) { lapseColor = 'var(--accent-good)'; lapseLabel = 'steep — strong thermals'; }
-      else if (lapseRate >= 6) { lapseColor = 'var(--accent-caution)'; lapseLabel = 'moderate'; }
-      else { lapseColor = 'var(--accent-poor)'; lapseLabel = 'stable'; }
 
       container.innerHTML = `
-        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:0.35rem;">
-          <span style="font-size:1.3rem;font-weight:600;color:${lapseColor};">${lapseRate !== null ? lapseRate.toFixed(1) : '—'}<span style="font-size:0.7rem;font-weight:400;"> °C/km</span></span>
-          <span style="font-size:0.65rem;color:${lapseColor};">${lapseLabel}</span>
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:0.5rem;">
+          <div>
+            <span style="font-size:0.65rem;color:var(--text-dim);">${pair.low.name}</span>
+            <span style="font-size:1.1rem;font-weight:600;color:var(--text);margin-left:0.3rem;">${Math.round(lowData.tempF)}°F</span>
+            <span style="font-size:0.6rem;color:var(--text-dim);margin-left:0.2rem;">${pair.low.elevFt.toLocaleString()}ft</span>
+          </div>
+          <div>
+            <span style="font-size:0.65rem;color:var(--text-dim);">${pair.high.name}</span>
+            <span style="font-size:1.1rem;font-weight:600;color:var(--text);margin-left:0.3rem;">${Math.round(highData.tempF)}°F</span>
+            <span style="font-size:0.6rem;color:var(--text-dim);margin-left:0.2rem;">${pair.high.elevFt.toLocaleString()}ft</span>
+          </div>
         </div>
-        <div style="display:flex;justify-content:space-between;font-size:0.65rem;color:var(--text-muted);">
-          <span>${pair.low.name} ${Math.round(lowData.tempF)}°F <span style="color:var(--text-dim);">${Math.round(lowElev).toLocaleString()}ft</span></span>
-          <span>${pair.high.name} ${Math.round(highData.tempF)}°F <span style="color:var(--text-dim);">${Math.round(highElev).toLocaleString()}ft</span></span>
+        <div style="font-size:0.7rem;color:var(--text-muted);text-align:center;">
+          ΔT <span style="font-weight:600;color:${tempDiffF > 0 ? 'var(--text)' : 'var(--accent-caution)'};">${tempDiffF > 0 ? '+' : ''}${Math.round(tempDiffF)}°F</span>
+          across ${(pair.high.elevFt - pair.low.elevFt).toLocaleString()} ft
         </div>
       `;
     }
