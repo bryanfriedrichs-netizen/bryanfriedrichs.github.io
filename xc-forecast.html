@@ -539,11 +539,12 @@ const SITES = [
     lon: -149.513583,
     elevFt: 1900,
     elevM: 579,
-    idealWindDir: [290, 340],   // W to NNW
+    idealWindDir: [290, 340],   // W to NNW — launch faces NW
     maxWind: 12,
     dangerWindDir: [45, 150],   // Strong east = severe turbulence along front range
+    overTheBackDir: [110, 230], // S/SE at LAUNCH level = over the back, unlaunchable
     chugachFrontRange: true,
-    notes: 'AAW: Arguably the best site in Anchorage. Primarily thermal, cloud base 7,000+ ft on good days. Ideal W to NNW (290°–340°), 0–12 mph. Mild south flow can aid the northern XC run to Bear Mtn/Knik River. Watch for rotors from Swiss Alps peak in N/NNW. Strong east winds aloft are dangerous along the entire front range. "Baldy Bubble" can produce flyable conditions when area is blown out. Former site of state XC records; numerous 60+ mi flights. Spring/early summer peak XC season.'
+    notes: 'AAW: Arguably the best site in Anchorage. Launch faces NW; thermals roll up the feeder gulley to produce windward launch cycles. Ideal W to NNW (290°–340°), 0–12 mph. S/SE wind AT LAUNCH is over-the-back and unlaunchable — but mild south flow ALOFT can aid the northern XC run to Bear Mtn/Knik River once airborne. Watch for rotors from Swiss Alps peak in N/NNW. Strong east winds aloft are dangerous along the entire front range. "Baldy Bubble" can produce flyable conditions when area is blown out. Former site of state XC records; numerous 60+ mi flights. Spring/early summer peak XC season.'
   },
   {
     id: 'govpeak',
@@ -738,6 +739,7 @@ function getAvailableDates() {
 
 function initDateSelector() {
   const container = document.getElementById('dateSelector');
+  container.innerHTML = ''; // allow rebuild for fresh labels
   for (let d = 0; d < 3; d++) {
     const dateStr = getAnchorageDateStr(d);
     const btn = document.createElement('button');
@@ -756,6 +758,9 @@ function initDateSelector() {
 
     btn.onclick = () => {
       selectedDate = d;
+      // Clear per-site hour selections — they belong to the previous date's
+      // hour indices and would otherwise display wrong-day data
+      selectedHours = {};
       container.querySelectorAll('.date-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       if (Object.keys(forecastData).length > 0) renderCards();
@@ -763,6 +768,23 @@ function initDateSelector() {
     container.appendChild(btn);
   }
 }
+
+// Refresh stale "Today"/"Tomorrow" labels if the calendar date has rolled
+// over while the tab was open (e.g. left open overnight)
+let dateSelectorBuiltFor = getAnchorageDateStr(0);
+function refreshDateSelectorIfStale() {
+  const nowStr = getAnchorageDateStr(0);
+  if (nowStr !== dateSelectorBuiltFor) {
+    dateSelectorBuiltFor = nowStr;
+    selectedHours = {};
+    initDateSelector();
+    if (Object.keys(forecastData).length > 0) renderCards();
+  }
+}
+window.addEventListener('focus', refreshDateSelectorIfStale);
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) refreshDateSelectorIfStale();
+});
 
 // ================================================================
 // MODEL SELECTOR
@@ -1200,41 +1222,44 @@ function analyzeSounding(siteData, site, hourIdx, modelKey) {
   result.windProfile = windProfile;
 
   // ── Scoring ──
+  // Restructured to reduce double-counting: the usable ceiling (derived from
+  // the temp profile) is the backbone. Lapse rate is a small modifier for
+  // thermal STRENGTH (climb rate), since ceiling already captures height.
   let score = 0;
+  let gateBelowLaunch = false;
+  let gatePrecip = false;
 
-  // Lapse rate scoring (DALR=9.8, good thermals want >6)
+  // Thermal strength modifier (lapse rate): 0–10 pts, continuous
+  // 5.5°C/km → 0 pts, 8.5°C/km → 10 pts
   if (result.lapseRate !== null) {
-    if (result.lapseRate >= 7.5) { score += 25; result.notes.push({ label: 'Lapse Rate', text: `${result.lapseRate.toFixed(1)}°C/km — steep, strong thermals likely`, type: 'positive' }); }
-    else if (result.lapseRate >= 6) { score += 15; result.notes.push({ label: 'Lapse Rate', text: `${result.lapseRate.toFixed(1)}°C/km — moderate instability`, type: 'neutral' }); }
-    else { score += 0; result.notes.push({ label: 'Lapse Rate', text: `${result.lapseRate.toFixed(1)}°C/km — weak/stable, limited thermals`, type: 'negative' }); }
+    const lr = result.lapseRate;
+    const strengthPts = Math.max(0, Math.min(10, ((lr - 5.5) / 3) * 10));
+    score += strengthPts;
+    if (lr >= 7.5) { result.notes.push({ label: 'Thermal Strength', text: `Lapse ${lr.toFixed(1)}°C/km — steep, strong climbs likely`, type: 'positive' }); }
+    else if (lr >= 6) { result.notes.push({ label: 'Thermal Strength', text: `Lapse ${lr.toFixed(1)}°C/km — moderate climb rates`, type: 'neutral' }); }
+    else { result.notes.push({ label: 'Thermal Strength', text: `Lapse ${lr.toFixed(1)}°C/km — weak/stable, soft thermals at best`, type: 'negative' }); }
   }
 
-  // Usable ceiling scoring — most important factor for XC
-  // Uses the lower of thermal top and cloud base as the actual flyable ceiling
+  // Usable ceiling — the backbone of the score: 0–50 pts, continuous
+  // 500 ft above launch → ~3 pts, 6,000+ ft above launch → 50 pts
   if (result.ceiling) {
     const ceilAglFt = result.ceiling.aglFt;
     const ceilMslFt = result.ceiling.altFt;
     const typeLabel = result.ceilingType === 'cu' ? 'Cu Day ☁' : result.ceilingType === 'blue' ? 'Blue Day' : 'Stable';
 
     if (result.ceilingType === 'stable' || ceilAglFt <= 0) {
-      score -= 30;
+      gateBelowLaunch = true;
       result.notes.push({ label: 'Usable Ceiling ⚠', text: `Below launch elevation — atmosphere is stable above site. Sled ride at best.`, type: 'negative' });
-    }
-    else if (ceilAglFt > 4000) {
-      score += 35;
-      result.notes.push({ label: `Usable Ceiling — ${typeLabel}`, text: `${Math.round(ceilMslFt).toLocaleString()} ft MSL — excellent height for XC`, type: 'positive' });
-    }
-    else if (ceilAglFt > 2000) {
-      score += 20;
-      result.notes.push({ label: `Usable Ceiling — ${typeLabel}`, text: `${Math.round(ceilMslFt).toLocaleString()} ft MSL — moderate, workable for XC`, type: 'neutral' });
-    }
-    else if (ceilAglFt > 500) {
-      score += 5;
-      result.notes.push({ label: `Usable Ceiling — ${typeLabel}`, text: `${Math.round(ceilMslFt).toLocaleString()} ft MSL — low ceiling, limited XC potential`, type: 'negative' });
-    }
-    else {
-      score -= 15;
-      result.notes.push({ label: `Usable Ceiling — ${typeLabel}`, text: `${Math.round(ceilMslFt).toLocaleString()} ft MSL — barely above launch, insufficient for XC`, type: 'negative' });
+    } else {
+      const ceilPts = Math.min(50, (ceilAglFt / 6000) * 50);
+      score += ceilPts;
+      if (ceilAglFt > 4000) {
+        result.notes.push({ label: `Usable Ceiling — ${typeLabel}`, text: `${Math.round(ceilMslFt).toLocaleString()} ft MSL — excellent height for XC`, type: 'positive' });
+      } else if (ceilAglFt > 2000) {
+        result.notes.push({ label: `Usable Ceiling — ${typeLabel}`, text: `${Math.round(ceilMslFt).toLocaleString()} ft MSL — moderate, workable for XC`, type: 'neutral' });
+      } else {
+        result.notes.push({ label: `Usable Ceiling — ${typeLabel}`, text: `${Math.round(ceilMslFt).toLocaleString()} ft MSL — low ceiling, limited XC potential`, type: 'negative' });
+      }
     }
 
     // Additional context note for Cu days
@@ -1242,16 +1267,15 @@ function analyzeSounding(siteData, site, hourIdx, modelKey) {
       result.notes.push({ label: 'Cu Development', text: `Thermals reach cloud base at ${Math.round(result.cloudBase.altFt).toLocaleString()} ft MSL before equilibrating at ${Math.round(result.thermalTop.altFt).toLocaleString()} ft. Expect cumulus — cloud base is your working ceiling.`, type: 'neutral' });
     }
   } else if (!result.thermalTop) {
-    score -= 25;
+    gateBelowLaunch = true;
     result.notes.push({ label: 'Usable Ceiling', text: 'No convective potential detected — stable atmosphere', type: 'negative' });
   }
 
-  // Wind scoring — based on worst-case across the flying band
+  // Wind scoring — based on worst-case across the flying band: 0–20 pts, continuous
+  // ≤8 mph → 20 pts, tapering to 0 at 28+ mph
   if (windProfile.maxWind !== null) {
     const worstWind = windProfile.maxWind;
-    if (worstWind < 15) { score += 20; }
-    else if (worstWind < 25) { score += 10; }
-    else { score += 0; }
+    score += Math.max(0, Math.min(20, ((28 - worstWind) / 20) * 20));
 
     // Launch wind note
     if (windProfile.launchWind) {
@@ -1309,9 +1333,25 @@ function analyzeSounding(siteData, site, hourIdx, modelKey) {
   const windDir = ridgeLevel ? ridgeLevel.windDir : result.surfaceWindDir;
   if (windDir !== null && windDir !== undefined) {
     const dirLabel = degToCompass(windDir);
+    const launchSpd = ridgeLevel?.windSpd ?? result.surfaceWind ?? 0;
 
-    // Check danger directions first
-    if (site.dangerWindDir && isWindInRange(windDir, site.dangerWindDir[0], site.dangerWindDir[1])) {
+    // Over-the-back check — launch-level wind from behind the hill.
+    // Penalty scales with speed: thermal cycles rolling up the feeder
+    // terrain can overcome light drift, but meaningful flow from behind
+    // makes the site unlaunchable regardless of how good the day is aloft.
+    const isOverTheBack = site.overTheBackDir && isWindInRange(windDir, site.overTheBackDir[0], site.overTheBackDir[1]);
+
+    if (isOverTheBack && launchSpd >= 8) {
+      score -= 35;
+      result.notes.push({ label: 'Over the Back ⚠', text: `${Math.round(launchSpd)} mph from ${Math.round(windDir)}° (${dirLabel}) at launch level — wind from behind launch. Unlaunchable.`, type: 'negative' });
+    } else if (isOverTheBack && launchSpd >= 4) {
+      score -= 15;
+      result.notes.push({ label: 'Over the Back', text: `${Math.round(launchSpd)} mph from ${Math.round(windDir)}° (${dirLabel}) at launch level — over-the-back drift. Launchable only if thermal cycles up the feeder terrain overpower it. Marginal.`, type: 'negative' });
+    } else if (isOverTheBack) {
+      result.notes.push({ label: 'Over the Back', text: `Light ${Math.round(windDir)}° (${dirLabel}) drift at launch level — thermal cycles rolling up the feeder terrain may still produce launchable windward cycles. Assess on site.`, type: 'neutral' });
+    }
+    // Check danger directions
+    else if (site.dangerWindDir && isWindInRange(windDir, site.dangerWindDir[0], site.dangerWindDir[1])) {
       score -= 25;
       result.notes.push({ label: 'Wind Direction ⚠', text: `${Math.round(windDir)}° (${dirLabel}) — DANGER direction for ${site.name} per AAW site guide. Expect rotor/severe turbulence.`, type: 'negative' });
     }
@@ -1323,6 +1363,11 @@ function analyzeSounding(siteData, site, hourIdx, modelKey) {
     // Not ideal but not dangerous
     else if (site.idealWindDir) {
       result.notes.push({ label: 'Wind Direction', text: `${Math.round(windDir)}° (${dirLabel}) — outside ideal range (${site.idealWindDir[0]}°–${site.idealWindDir[1]}°)`, type: 'neutral' });
+    }
+
+    // If over-the-back AND in a danger range (e.g. SE at Baldy is both), still flag the rotor hazard
+    if (isOverTheBack && site.dangerWindDir && isWindInRange(windDir, site.dangerWindDir[0], site.dangerWindDir[1])) {
+      result.notes.push({ label: 'Wind Direction ⚠', text: `${Math.round(windDir)}° (${dirLabel}) is also a DANGER direction for ${site.name} — rotor/severe turbulence in addition to over-the-back conditions.`, type: 'negative' });
     }
 
     // Site-specific max wind check
@@ -1374,22 +1419,23 @@ function analyzeSounding(siteData, site, hourIdx, modelKey) {
     }
   }
 
-  // Cloud cover scoring
+  // Cloud cover scoring: 0–15 pts, continuous (clear → 15, 80%+ → 0)
   if (result.cloudCover !== null) {
-    if (result.cloudCover < 40) { score += 15; result.notes.push({ label: 'Cloud Cover', text: `${Math.round(result.cloudCover)}% — good solar heating`, type: 'positive' }); }
-    else if (result.cloudCover < 70) { score += 8; result.notes.push({ label: 'Cloud Cover', text: `${Math.round(result.cloudCover)}% — partial, thermals possible`, type: 'neutral' }); }
-    else { score += 0; result.notes.push({ label: 'Cloud Cover', text: `${Math.round(result.cloudCover)}% — overcast, weak thermals`, type: 'negative' }); }
+    score += Math.max(0, Math.min(15, ((80 - result.cloudCover) / 80) * 15));
+    if (result.cloudCover < 40) { result.notes.push({ label: 'Cloud Cover', text: `${Math.round(result.cloudCover)}% — good solar heating`, type: 'positive' }); }
+    else if (result.cloudCover < 70) { result.notes.push({ label: 'Cloud Cover', text: `${Math.round(result.cloudCover)}% — partial, thermals possible`, type: 'neutral' }); }
+    else { result.notes.push({ label: 'Cloud Cover', text: `${Math.round(result.cloudCover)}% — overcast, weak thermals`, type: 'negative' }); }
   }
 
-  // Precipitation penalty
+  // Precipitation — hard gate, not just a penalty
   if (result.precip != null && result.precip > 0.1) {
-    score -= 20;
-    result.notes.push({ label: 'Precip', text: `${result.precip.toFixed(1)} mm/hr — active precipitation`, type: 'negative' });
+    gatePrecip = true;
+    result.notes.push({ label: 'Precip ⚠', text: `${result.precip.toFixed(1)} mm/hr — active precipitation`, type: 'negative' });
   }
 
-  // CAPE bonus
+  // CAPE bonus (reduced — correlated with lapse/ceiling)
   if (result.cape !== null && result.cape > 100) {
-    score += 10;
+    score += 5;
     result.notes.push({ label: 'CAPE', text: `${Math.round(result.cape)} J/kg — convective energy available`, type: 'positive' });
   }
 
@@ -1413,8 +1459,9 @@ function analyzeSounding(siteData, site, hourIdx, modelKey) {
           type: 'positive'
         });
       } else {
-        // Launch is BELOW this inversion — thermals capped
-        score -= 10;
+        // Launch is BELOW this inversion — thermals capped.
+        // No score penalty here: the capping effect is already reflected
+        // in the usable ceiling calculation. Note is informational.
         result.notes.push({
           label: 'Inversion ▼ BELOW ⚠',
           text: `${inv.type} at ${baseStr}–${topStr} (${aglStr}, ${strengthStr}) — launch is BELOW this layer. Thermals will be capped until it breaks. May need to wait for solar heating to erode it.`,
@@ -1435,7 +1482,13 @@ function analyzeSounding(siteData, site, hourIdx, modelKey) {
     }
   }
 
-  result.score = Math.max(0, Math.min(100, score));
+  // ── Hard gates ──
+  // No usable ceiling above launch = no XC, regardless of how nice the
+  // other parameters look. Active precip caps the day at marginal-at-best.
+  if (gateBelowLaunch) score = Math.min(score, 10);
+  if (gatePrecip) score = Math.min(score, 25);
+
+  result.score = Math.round(Math.max(0, Math.min(100, score)));
   if (result.score >= 60) result.rating = 'good';
   else if (result.score >= 35) result.rating = 'caution';
   else result.rating = 'poor';
@@ -1503,7 +1556,7 @@ function renderCards() {
     if (!data) continue;
 
     const peakIdx = findPeakHour(data, site, selectedDate);
-    if (!selectedHours[site.id]) selectedHours[site.id] = peakIdx;
+    if (selectedHours[site.id] == null) selectedHours[site.id] = peakIdx;
     const hourIdx = selectedHours[site.id] ?? peakIdx;
 
     if (hourIdx === null) {
@@ -1567,7 +1620,7 @@ function renderCards() {
         </div>
         <div class="summary-item">
           <div class="summary-label">Launch Dir</div>
-          <div class="summary-value ${analysis.windProfile.launchWind && site.dangerWindDir && isWindInRange(analysis.windProfile.launchWind.dir, site.dangerWindDir[0], site.dangerWindDir[1]) ? 'poor' : analysis.windProfile.launchWind && site.idealWindDir && isWindInRange(analysis.windProfile.launchWind.dir, site.idealWindDir[0], site.idealWindDir[1]) ? 'good' : 'caution'}">${analysis.windProfile.launchWind ? degToCompass(analysis.windProfile.launchWind.dir) + ' ' + Math.round(analysis.windProfile.launchWind.dir) + '°' : '—'}</div>
+          <div class="summary-value ${analysis.windProfile.launchWind && ((site.overTheBackDir && isWindInRange(analysis.windProfile.launchWind.dir, site.overTheBackDir[0], site.overTheBackDir[1])) || (site.dangerWindDir && isWindInRange(analysis.windProfile.launchWind.dir, site.dangerWindDir[0], site.dangerWindDir[1]))) ? 'poor' : analysis.windProfile.launchWind && site.idealWindDir && isWindInRange(analysis.windProfile.launchWind.dir, site.idealWindDir[0], site.idealWindDir[1]) ? 'good' : 'caution'}">${analysis.windProfile.launchWind ? degToCompass(analysis.windProfile.launchWind.dir) + ' ' + Math.round(analysis.windProfile.launchWind.dir) + '°' : '—'}</div>
         </div>
         <div class="summary-item">
           <div class="summary-label">Cloud %</div>
@@ -2068,7 +2121,7 @@ function exportReport() {
       continue;
     }
 
-    const peakIdx = selectedHours[site.id] || findPeakHour(data, site, selectedDate);
+    const peakIdx = selectedHours[site.id] ?? findPeakHour(data, site, selectedDate);
     if (peakIdx === null) {
       forecastRows.push([site.name, site.elevFt, 'NO DATA']);
       continue;
@@ -2114,7 +2167,7 @@ function exportReport() {
   for (const site of SITES) {
     const data = forecastData[site.id];
     if (!data) continue;
-    const peakIdx = selectedHours[site.id] || findPeakHour(data, site, selectedDate);
+    const peakIdx = selectedHours[site.id] ?? findPeakHour(data, site, selectedDate);
     if (peakIdx === null) continue;
     const a = getAnalysisForDisplay(site.id, site, peakIdx);
 
