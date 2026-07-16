@@ -1,0 +1,789 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Is Kincaid Flyable?</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #0a0a0a;
+    --panel: #1a1a1a;
+    --panel-2: #141414;
+    --border: #2a2a2a;
+    --border-2: #3a3a3a;
+    --text: #e0e0e0;
+    --muted: #b0b0b0;
+    --dim: #6a6a6a;
+    --blue: #3b82f6;
+    --blue-2: #2563eb;
+    --green: #4ade80;
+    --amber: #f59e0b;
+    --red: #ef4444;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    min-height: 100vh;
+  }
+
+  /* Header */
+  header {
+    background: rgba(20, 20, 20, 0.95);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--border);
+    padding: 1.5rem 2rem;
+  }
+  header .inner {
+    max-width: 1000px;
+    margin: 0 auto;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  header h1 {
+    font-size: 1.6rem;
+    color: #fff;
+    letter-spacing: -0.01em;
+  }
+  header h1 .q { color: var(--blue); }
+  header .tagline {
+    color: var(--dim);
+    font-size: 0.85rem;
+    font-family: var(--mono);
+  }
+  header .back {
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 0.9rem;
+    transition: color 0.3s;
+  }
+  header .back:hover { color: #fff; }
+
+  /* Ridge divider (reused from site) */
+  .ridge-divider { width: 100%; max-width: 1000px; margin: 0 auto; padding: 0 2rem; }
+  .ridge-divider canvas {
+    display: block; width: 100%; height: 54px;
+    border-bottom: 1px solid var(--border);
+    background: #0f0f0f;
+  }
+
+  main { max-width: 1000px; margin: 0 auto; padding: 2.5rem 2rem 4rem; }
+
+  .sub {
+    color: var(--muted);
+    font-size: 0.95rem;
+    margin-bottom: 2rem;
+    max-width: 640px;
+  }
+  .sub code {
+    font-family: var(--mono);
+    font-size: 0.85rem;
+    color: var(--muted);
+    background: var(--panel-2);
+    padding: 0.1rem 0.4rem;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+  }
+
+  /* Input panel */
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1.75rem;
+  }
+  .panel-title {
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--dim);
+    font-family: var(--mono);
+    margin-bottom: 1.25rem;
+  }
+
+  .controls {
+    display: grid;
+    grid-template-columns: 1fr 1.4fr;
+    gap: 1.25rem;
+    align-items: end;
+  }
+  @media (max-width: 640px) { .controls { grid-template-columns: 1fr; } }
+
+  .field label {
+    display: block;
+    font-size: 0.85rem;
+    color: var(--muted);
+    margin-bottom: 0.5rem;
+    font-weight: 500;
+  }
+  .field input {
+    width: 100%;
+    padding: 0.7rem 0.85rem;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-size: 0.95rem;
+    font-family: inherit;
+  }
+  .field input:focus { outline: none; border-color: var(--blue); }
+  .field input::placeholder { color: #555; }
+
+  .loc-wrap { position: relative; display: flex; gap: 0.5rem; }
+  .loc-wrap input { flex: 1; }
+  .detect-btn {
+    padding: 0 0.9rem;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--muted);
+    font-size: 0.82rem;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.2s;
+    font-family: var(--mono);
+  }
+  .detect-btn:hover { border-color: var(--border-2); color: var(--text); }
+  .detect-btn:disabled { opacity: 0.5; cursor: default; }
+
+  .run-row { margin-top: 1.5rem; }
+  .run-btn {
+    width: 100%;
+    padding: 0.9rem;
+    background: var(--blue);
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.25s;
+    letter-spacing: 0.01em;
+  }
+  .run-btn:hover:not(:disabled) { background: var(--blue-2); }
+  .run-btn:disabled { opacity: 0.55; cursor: default; }
+
+  .err { color: var(--amber); font-size: 0.85rem; margin-top: 0.75rem; min-height: 1.1rem; font-family: var(--mono); }
+
+  /* Analysis theater */
+  .analysis { margin-top: 1.5rem; display: none; }
+  .analysis.active { display: block; }
+
+  .progress-head {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 0.6rem;
+  }
+  .progress-head .stage {
+    font-family: var(--mono); font-size: 0.85rem; color: var(--text);
+  }
+  .progress-head .pct {
+    font-family: var(--mono); font-size: 0.85rem; color: var(--blue);
+    font-variant-numeric: tabular-nums;
+  }
+  .progress-track {
+    height: 6px; background: var(--panel-2); border: 1px solid var(--border);
+    border-radius: 4px; overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%; width: 0%;
+    background: linear-gradient(90deg, #1e40af, var(--blue));
+    transition: width 0.35s ease;
+  }
+
+  .grid-2 {
+    display: grid; grid-template-columns: 1.15fr 1fr; gap: 1.25rem;
+    margin-top: 1.5rem;
+  }
+  @media (max-width: 720px) { .grid-2 { grid-template-columns: 1fr; } }
+
+  /* Console log */
+  .console {
+    background: #0c0c0c;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem;
+    height: 320px;
+    overflow-y: auto;
+    font-family: var(--mono);
+    font-size: 0.8rem;
+    line-height: 1.9;
+  }
+  .console::-webkit-scrollbar { width: 8px; }
+  .console::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 4px; }
+  .log-line { display: flex; gap: 0.55rem; align-items: baseline; }
+  .log-line .mark { width: 0.9rem; flex-shrink: 0; text-align: center; }
+  .log-line .mark.spin { color: var(--blue); animation: spin 0.8s linear infinite; display: inline-block; }
+  .log-line .mark.done { color: var(--green); }
+  .log-line .txt { color: var(--muted); }
+  .log-line.done .txt { color: #8a8a8a; }
+  .log-line .val { color: var(--text); margin-left: auto; padding-left: 0.75rem; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Data tiles */
+  .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; align-content: start; }
+  .tile {
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.8rem 0.9rem;
+  }
+  .tile .k {
+    font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--dim); font-family: var(--mono); margin-bottom: 0.25rem;
+  }
+  .tile .v {
+    font-size: 1.05rem; color: var(--text); font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+  }
+  .tile .v.pending { color: #444; }
+
+  /* Verdict */
+  .verdict { margin-top: 1.5rem; display: none; }
+  .verdict.active { display: block; animation: fade 0.5s ease; }
+  @keyframes fade { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+  .verdict-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .verdict-head {
+    background: var(--panel-2);
+    border-bottom: 1px solid var(--border);
+    padding: 0.8rem 1.5rem;
+    display: flex; justify-content: space-between; align-items: center;
+    font-family: var(--mono); font-size: 0.78rem;
+  }
+  .verdict-head .label { color: var(--dim); text-transform: uppercase; letter-spacing: 0.12em; }
+  .verdict-head .status { color: var(--green); display: flex; align-items: center; gap: 0.4rem; }
+  .verdict-head .status::before {
+    content: ''; width: 7px; height: 7px; border-radius: 50%;
+    background: var(--green); box-shadow: 0 0 8px var(--green);
+  }
+
+  .verdict-times {
+    display: grid; grid-template-columns: 1fr 1fr;
+  }
+  @media (max-width: 560px) { .verdict-times { grid-template-columns: 1fr; } }
+  .vt {
+    padding: 1.75rem 1.5rem;
+  }
+  .vt:first-child { border-right: 1px solid var(--border); }
+  @media (max-width: 560px) { .vt:first-child { border-right: none; border-bottom: 1px solid var(--border); } }
+  .vt .vt-label {
+    font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.1em;
+    color: var(--dim); font-family: var(--mono); margin-bottom: 0.6rem;
+  }
+  .vt .vt-time {
+    font-size: 2.4rem; font-weight: 700; letter-spacing: -0.02em; line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+  .vt .vt-time.arrive { color: var(--text); }
+  .vt .vt-time.until { color: var(--amber); }
+  .vt .vt-time.until.msg {
+    font-size: 1.2rem; font-weight: 600; line-height: 1.4; letter-spacing: 0;
+  }
+  .vt .vt-date { font-size: 0.85rem; color: var(--dim); font-family: var(--mono); margin-top: 0.5rem; }
+  .vt .vt-badge {
+    display: inline-block; margin-top: 0.7rem; font-family: var(--mono);
+    font-size: 0.7rem; padding: 0.15rem 0.5rem; border-radius: 4px;
+    text-transform: uppercase; letter-spacing: 0.08em;
+  }
+  .vt-badge.open { color: var(--green); border: 1px solid rgba(74,222,128,0.3); background: rgba(74,222,128,0.08); }
+  .vt-badge.closed { color: var(--amber); border: 1px solid rgba(245,158,11,0.3); background: rgba(245,158,11,0.08); }
+
+  .verdict-meta {
+    border-top: 1px solid var(--border);
+    padding: 1.25rem 1.5rem;
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem 1.25rem;
+  }
+  @media (max-width: 560px) { .verdict-meta { grid-template-columns: repeat(2, 1fr); } }
+  .meta-item .mk {
+    font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--dim); font-family: var(--mono); margin-bottom: 0.2rem;
+  }
+  .meta-item .mv { font-size: 0.9rem; color: var(--muted); font-family: var(--mono); }
+  .meta-item .mv.hi { color: var(--green); }
+
+  .verdict-foot {
+    border-top: 1px solid var(--border);
+    padding: 0.9rem 1.5rem;
+    font-family: var(--mono); font-size: 0.8rem; color: var(--dim);
+    display: flex; gap: 0.55rem; align-items: baseline;
+  }
+  .verdict-foot .rk { color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.7rem; }
+
+  .rerun { margin-top: 1.25rem; text-align: center; }
+  .rerun button {
+    background: none; border: 1px solid var(--border); color: var(--muted);
+    padding: 0.55rem 1.25rem; border-radius: 6px; cursor: pointer;
+    font-family: var(--mono); font-size: 0.82rem; transition: all 0.2s;
+  }
+  .rerun button:hover { border-color: var(--border-2); color: var(--text); }
+
+  .disclaimer {
+    margin-top: 2.5rem; text-align: center; color: #4a4a4a;
+    font-size: 0.75rem; font-family: var(--mono);
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="inner">
+    <div>
+      <h1>Is Kincaid Flyable<span class="q">?</span></h1>
+    </div>
+    <a href="index.html" class="back">← All tools</a>
+  </div>
+</header>
+
+<div class="ridge-divider"><canvas class="ridge-canvas"></canvas></div>
+
+<main>
+  <p class="sub">
+    Site-specific soaring assessment for <strong>Kincaid Bluffs</strong> <code>61.1573°N, 150.0475°W</code>,
+    launch directly in front of the motocross park. Combines multi-model forecast pressure-level
+    data with live routing to determine whether the site will be flyable by the time you arrive.
+  </p>
+
+  <div class="panel">
+    <div class="panel-title">Query Parameters</div>
+    <div class="controls">
+      <div class="field">
+        <label for="date">Date to check</label>
+        <input type="date" id="date">
+      </div>
+      <div class="field">
+        <label for="loc">Your current location</label>
+        <div class="loc-wrap">
+          <input type="text" id="loc" placeholder="e.g. Midtown Anchorage, or an address" autocomplete="off">
+          <button class="detect-btn" id="detect" type="button">◎ Detect</button>
+        </div>
+      </div>
+    </div>
+    <div class="run-row">
+      <button class="run-btn" id="run">Check Conditions</button>
+      <div class="err" id="err"></div>
+    </div>
+
+    <!-- Analysis theater -->
+    <div class="analysis" id="analysis">
+      <div class="progress-head">
+        <span class="stage" id="stage">Initializing…</span>
+        <span class="pct" id="pct">0%</span>
+      </div>
+      <div class="progress-track"><div class="progress-fill" id="fill"></div></div>
+
+      <div class="grid-2">
+        <div class="console" id="console"></div>
+        <div class="tiles" id="tiles"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Verdict -->
+  <div class="verdict" id="verdict">
+    <div class="verdict-card">
+      <div class="verdict-head">
+        <span class="label">Assessment Complete</span>
+        <span class="status">Analysis converged</span>
+      </div>
+      <div class="verdict-times">
+        <div class="vt">
+          <div class="vt-label">Pilot expected arrival time</div>
+          <div class="vt-time arrive" id="arriveTime">—</div>
+          <div class="vt-date" id="arriveDate"></div>
+          <span class="vt-badge open" id="arriveBadge">En route</span>
+        </div>
+        <div class="vt">
+          <div class="vt-label">Kincaid flyable until</div>
+          <div class="vt-time until" id="untilTime">—</div>
+          <div class="vt-date" id="untilDate"></div>
+          <span class="vt-badge closed" id="untilBadge">Window elapsed</span>
+        </div>
+      </div>
+      <div class="verdict-meta" id="meta"></div>
+      <div class="verdict-foot">
+        <span class="rk">Recommended action</span>
+        <span id="rec">Proceed to alternate site.</span>
+      </div>
+    </div>
+    <div class="rerun">
+      <button id="rerun">← Adjust parameters</button>
+    </div>
+  </div>
+
+  <p class="disclaimer">AK XC Forecast · Kincaid module · GFS + ECMWF composite · not for navigational use</p>
+</main>
+
+<script>
+/* ========================================================================
+   Is Kincaid Flyable?  —  deadpan soaring assessment
+   The analysis is entirely cosmetic. The verdict is not.
+   ======================================================================== */
+
+const KINCAID = { lat: 61.1573, lon: -150.0475, elevFt: 108 };
+
+// ---- deterministic hash so identical inputs give identical answers ----
+function hashStr(s) {
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  return h >>> 0;
+}
+function seededRand(seed) {
+  let s = seed >>> 0;
+  return function () {
+    s = (Math.imul(s, 16807) + 12345) >>> 0;
+    return (s & 0x7fffffff) / 0x7fffffff;
+  };
+}
+
+// ---- time helpers ----
+function fmtTime(d) {
+  let h = d.getHours(), m = d.getMinutes();
+  const ap = h >= 12 ? 'PM' : 'AM';
+  h = h % 12; if (h === 0) h = 12;
+  return h + ':' + String(m).padStart(2, '0') + ' ' + ap;
+}
+function fmtDate(d) {
+  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+}
+function sameDay(a, b) {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
+// ---- fabricate a convincing, stable travel time from the location ----
+function computeArrival(locStr, chosenDate) {
+  const seed = hashStr(locStr.trim().toLowerCase());
+  const rnd = seededRand(seed);
+
+  // base drive: 9–42 min depending on where they say they are
+  const baseDrive = 9 + Math.floor(rnd() * 34);
+
+  // "live traffic" delay, stable within the current 15-min window,
+  // heavier during Anchorage rush hours
+  const now = new Date();
+  const hour = now.getHours();
+  const rush = (hour >= 7 && hour <= 9) || (hour >= 16 && hour <= 18);
+  const bucket = Math.floor(now.getMinutes() / 15);
+  const trndRand = seededRand(hashStr(locStr + hour + bucket));
+  const trafficDelay = (rush ? 6 : 2) + Math.floor(trndRand() * (rush ? 8 : 4));
+
+  // parking + walk-in to the bluff
+  const walkIn = 3 + Math.floor(rnd() * 3);
+
+  const totalMin = baseDrive + trafficDelay + walkIn;
+
+  // depart "now" on the chosen date, keeping the current clock time
+  const depart = new Date(chosenDate.getFullYear(), chosenDate.getMonth(), chosenDate.getDate(),
+                          now.getHours(), now.getMinutes(), 0, 0);
+  const arrive = new Date(depart.getTime() + totalMin * 60000);
+  const until = new Date(arrive.getTime() - 5 * 60000);
+
+  return {
+    arrive, until, baseDrive, trafficDelay, walkIn, totalMin,
+    rush, seed, rnd: seededRand(seed ^ 0x9e3779b9)
+  };
+}
+
+// ---- cosmetic data readouts (plausible, never used) ----
+function synthTiles(rnd, res) {
+  const dirs = ['SW', 'WSW', 'W', 'WNW', 'S', 'SSW'];
+  const pick = a => a[Math.floor(rnd() * a.length)];
+  const r = (lo, hi, dp = 0) => (lo + rnd() * (hi - lo)).toFixed(dp);
+
+  const sfcDir = pick(dirs);
+  const sfcSpd = +r(4, 11);
+  const gust = sfcSpd + Math.round(2 + rnd() * 5);
+  return [
+    { k: 'Surface wind', v: `${sfcDir} ${sfcSpd} kt` },
+    { k: 'Surface gust', v: `G${gust} kt` },
+    { k: 'Wind @ 1000 ft', v: `${pick(dirs)} ${r(8, 18)} kt` },
+    { k: 'Wind @ 3000 ft', v: `${pick(dirs)} ${r(12, 26)} kt` },
+    { k: 'Cloud base', v: `${(2600 + Math.floor(rnd() * 2200)).toLocaleString()} ft` },
+    { k: 'Lapse rate', v: `${r(5.8, 8.4, 1)} °C/km` },
+    { k: 'CAPE', v: `${Math.floor(rnd() * 90)} J/kg` },
+    { k: 'Inversion', v: rnd() > 0.55 ? `Weak @ ${(2000 + Math.floor(rnd() * 900))} ft` : 'None detected' },
+    { k: 'Sea-breeze onset', v: `${11 + Math.floor(rnd() * 3)}:${String(Math.floor(rnd() * 6) * 10).padStart(2, '0')}` },
+    { k: 'Lee rotor risk', v: pick(['LOW', 'LOW', 'MODERATE']) },
+    { k: 'Thermal cycle', v: `~${8 + Math.floor(rnd() * 7)} min` },
+    { k: 'Model agreement', v: pick(['HIGH', 'HIGH', 'MODERATE']) },
+  ];
+}
+
+// ---- the analysis steps (all theater) ----
+function buildSteps(res, locStr) {
+  const drive = res.baseDrive + res.trafficDelay;
+  return [
+    { t: 'Acquiring origin coordinates', v: 'ok', ph: 'Geolocation' },
+    { t: `Reverse-geocoding departure point`, v: locStr.slice(0, 22) || 'origin', ph: 'Geolocation' },
+    { t: 'Establishing great-circle bearing to launch', v: `${Math.floor(190 + res.rnd() * 60)}°`, ph: 'Geolocation' },
+    { t: 'Fetching GFS pressure-level data (Open-Meteo)', v: '13 lvls', ph: 'Forecast models' },
+    { t: 'Fetching ECMWF ensemble members', v: '51 mbr', ph: 'Forecast models' },
+    { t: 'Computing lapse-rate profile 925–700 hPa', v: 'ok', ph: 'Forecast models' },
+    { t: `Scanning inversions relative to launch (${KINCAID.elevFt} ft MSL)`, v: 'ok', ph: 'Forecast models' },
+    { t: 'Resolving Cook Inlet sea-breeze convergence', v: 'ok', ph: 'Boundary layer' },
+    { t: 'Modeling lee rotor off the bluff face', v: 'ok', ph: 'Boundary layer' },
+    { t: 'Cross-referencing CNFAIC Hillside obs', v: '2 stn', ph: 'Boundary layer' },
+    { t: 'Deriving flying-band wind shear', v: 'ok', ph: 'Boundary layer' },
+    { t: 'Estimating thermal cycle period', v: 'ok', ph: 'Boundary layer' },
+    { t: 'Initializing traffic routing engine', v: 'ok', ph: 'Routing' },
+    { t: 'Solving route: Minnesota Dr → Raspberry Rd → Jodhpur St', v: `${(6 + res.rnd() * 3).toFixed(1)} mi`, ph: 'Routing' },
+    { t: 'Applying live congestion weights', v: res.rush ? 'rush' : 'nominal', ph: 'Routing' },
+    { t: 'Estimating parking + walk-in to launch', v: `${res.walkIn} min`, ph: 'Routing' },
+    { t: 'Running Monte Carlo arrival simulation', v: '10,000 it', ph: 'Reconciliation' },
+    { t: 'Reconciling arrival window vs cycle-up window', v: 'ok', ph: 'Reconciliation' },
+    { t: 'Compiling verdict', v: 'ok', ph: 'Reconciliation' },
+  ];
+}
+
+// ---- DOM ----
+const $ = id => document.getElementById(id);
+const dateEl = $('date'), locEl = $('loc'), runEl = $('run'), errEl = $('err');
+const analysisEl = $('analysis'), consoleEl = $('console'), tilesEl = $('tiles');
+const stageEl = $('stage'), pctEl = $('pct'), fillEl = $('fill');
+const verdictEl = $('verdict');
+
+// default date = today
+(function () {
+  const t = new Date();
+  dateEl.value = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
+})();
+
+// cosmetic "detect" — fills a friendly placeholder, doesn't need real geo
+$('detect').addEventListener('click', function () {
+  const btn = this;
+  btn.disabled = true; btn.textContent = '◎ Locating…';
+  const finish = (label) => {
+    locEl.value = label;
+    btn.disabled = false; btn.textContent = '◎ Detect';
+  };
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(
+      p => finish(`${p.coords.latitude.toFixed(4)}, ${p.coords.longitude.toFixed(4)}`),
+      () => finish('Anchorage, AK'),
+      { timeout: 4000 }
+    );
+  } else {
+    setTimeout(() => finish('Anchorage, AK'), 600);
+  }
+});
+
+let running = false;
+
+runEl.addEventListener('click', run);
+locEl.addEventListener('keydown', e => { if (e.key === 'Enter') run(); });
+
+function run() {
+  if (running) return;
+  errEl.textContent = '';
+  const loc = locEl.value.trim();
+  if (!loc) { errEl.textContent = '! Enter your current location to continue.'; locEl.focus(); return; }
+  if (!dateEl.value) { errEl.textContent = '! Select a date to check.'; return; }
+
+  running = true;
+  runEl.disabled = true; runEl.textContent = 'Analyzing…';
+  verdictEl.classList.remove('active');
+  consoleEl.innerHTML = '';
+  tilesEl.innerHTML = '';
+  fillEl.style.width = '0%';
+  pctEl.textContent = '0%';
+  analysisEl.classList.add('active');
+
+  const [y, m, d] = dateEl.value.split('-').map(Number);
+  const chosenDate = new Date(y, m - 1, d);
+  const res = computeArrival(loc, chosenDate);
+  const steps = buildSteps(res, loc);
+  const tileData = synthTiles(res.rnd, res);
+
+  // lay out tiles in a "pending" state, then populate as analysis runs
+  tileData.forEach((t, i) => {
+    const el = document.createElement('div');
+    el.className = 'tile';
+    el.innerHTML = `<div class="k">${t.k}</div><div class="v pending" data-i="${i}">— — —</div>`;
+    tilesEl.appendChild(el);
+  });
+  const tileVals = [...tilesEl.querySelectorAll('.v')];
+
+  // flicker tiles while computing
+  let flicker = setInterval(() => {
+    tileVals.forEach(v => {
+      if (v.classList.contains('pending')) {
+        const glyphs = '0123456789.·kt°ftJ/SWNE ';
+        v.textContent = Array.from({ length: 6 }, () => glyphs[Math.floor(Math.random() * glyphs.length)]).join('');
+      }
+    });
+  }, 70);
+
+  let idx = 0;
+  let currentLine = null;
+
+  function nextStep() {
+    // finalize previous line
+    if (currentLine) {
+      currentLine.classList.add('done');
+      const mk = currentLine.querySelector('.mark');
+      mk.className = 'mark done'; mk.textContent = '✓';
+    }
+
+    if (idx >= steps.length) {
+      clearInterval(flicker);
+      // settle remaining tiles
+      tileVals.forEach((v, i) => { v.classList.remove('pending'); v.textContent = tileData[i].v; });
+      stageEl.textContent = 'Reconciliation · complete';
+      pctEl.textContent = '100%';
+      fillEl.style.width = '100%';
+      setTimeout(showVerdict, 550);
+      return;
+    }
+
+    const step = steps[idx];
+    stageEl.textContent = step.ph + ' · working';
+    const p = Math.round(((idx + 1) / steps.length) * 100);
+    fillEl.style.width = p + '%';
+    pctEl.textContent = p + '%';
+
+    // reveal a couple of tiles roughly in step with progress
+    const revealUpTo = Math.floor((idx / steps.length) * tileData.length);
+    tileVals.forEach((v, i) => {
+      if (i < revealUpTo && v.classList.contains('pending')) {
+        v.classList.remove('pending'); v.textContent = tileData[i].v;
+      }
+    });
+
+    const line = document.createElement('div');
+    line.className = 'log-line';
+    line.innerHTML = `<span class="mark spin">◜</span><span class="txt">${step.t}</span><span class="val">${step.v}</span>`;
+    consoleEl.appendChild(line);
+    consoleEl.scrollTop = consoleEl.scrollHeight;
+    currentLine = line;
+
+    idx++;
+    // variable pacing so it feels like real work
+    const base = 240 + Math.random() * 260;
+    const heavy = /Monte Carlo|ECMWF|GFS|routing engine/.test(step.t) ? 500 : 0;
+    setTimeout(nextStep, base + heavy);
+  }
+
+  setTimeout(nextStep, 300);
+
+  // stash for verdict
+  run._res = res;
+  run._loc = loc;
+  run._chosen = chosenDate;
+}
+
+function showVerdict() {
+  const res = run._res;
+  const now = new Date();
+  const arriveIsToday = sameDay(res.arrive, now);
+
+  $('arriveTime').textContent = fmtTime(res.arrive);
+  $('untilTime').textContent = 'Dude, it literally turned off like 5 minutes before you got here';
+  $('untilTime').classList.add('msg');
+  $('arriveDate').textContent = arriveIsToday ? 'Today' : fmtDate(res.arrive);
+  $('untilDate').textContent = '';
+
+  // metadata — officious, precise, useless
+  const conf = (97 + res.rnd() * 2.7).toFixed(1);
+  const meta = [
+    { k: 'Site', v: 'Kincaid Bluffs' },
+    { k: 'Launch coord', v: '61.1573, −150.0475' },
+    { k: 'Model', v: 'GFS+ECMWF' },
+    { k: 'Est. drive time', v: `${res.baseDrive + res.trafficDelay} min` },
+    { k: 'Traffic', v: res.rush ? 'Heavy' : 'Nominal' },
+    { k: 'Confidence', v: conf + '%', hi: true },
+  ];
+  $('meta').innerHTML = meta.map(m =>
+    `<div class="meta-item"><div class="mk">${m.k}</div><div class="mv ${m.hi ? 'hi' : ''}">${m.v}</div></div>`
+  ).join('');
+
+  analysisEl.classList.remove('active');
+  verdictEl.classList.add('active');
+  verdictEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+  running = false;
+  runEl.disabled = false; runEl.textContent = 'Check Conditions';
+}
+
+$('rerun').addEventListener('click', () => {
+  verdictEl.classList.remove('active');
+  analysisEl.classList.remove('active');
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+  locEl.focus();
+});
+
+/* ===== reused generative ridge divider (matches site) ===== */
+function generateRidge(width, numPoints, roughness, seed) {
+  let s = seed;
+  function rand() { s = (s * 16807) % 2147483647; return (s & 0x7fffffff) / 0x7fffffff; }
+  const anchors = 6 + Math.floor(rand() * 5);
+  let points = [];
+  for (let i = 0; i <= anchors; i++) {
+    const x = (i / anchors) * width;
+    const edgeFade = 1 - Math.pow((i / anchors - 0.5) * 2, 2) * 0.4;
+    points.push({ x, h: (0.25 + rand() * 0.5) * edgeFade });
+  }
+  for (let pass = 0; pass < 5; pass++) {
+    const np = [points[0]];
+    const scale = roughness * Math.pow(0.5, pass);
+    for (let i = 0; i < points.length - 1; i++) {
+      const mid = { x: (points[i].x + points[i + 1].x) / 2, h: (points[i].h + points[i + 1].h) / 2 + (rand() - 0.5) * scale };
+      mid.h = Math.max(0.05, Math.min(0.95, mid.h));
+      np.push(mid); np.push(points[i + 1]);
+    }
+    points = np;
+  }
+  const result = new Float32Array(numPoints);
+  for (let px = 0; px < numPoints; px++) {
+    const tx = (px / (numPoints - 1)) * width;
+    let lo = 0, hi = points.length - 1;
+    for (let j = 0; j < points.length - 1; j++) if (points[j].x <= tx && points[j + 1].x >= tx) { lo = j; hi = j + 1; break; }
+    const t = points[hi].x === points[lo].x ? 0 : (tx - points[lo].x) / (points[hi].x - points[lo].x);
+    result[px] = points[lo].h + (points[hi].h - points[lo].h) * t;
+  }
+  return result;
+}
+function drawRidgeCanvas(canvas) {
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  const w = rect.width, h = rect.height;
+  canvas.width = w * dpr; canvas.height = h * dpr;
+  const ctx = canvas.getContext('2d'); ctx.scale(dpr, dpr);
+  ctx.fillStyle = '#0f0f0f'; ctx.fillRect(0, 0, w, h);
+  const seed = Math.floor(Math.random() * 2147483647);
+  const numPoints = Math.floor(w);
+  const layers = [
+    { roughness: 0.7, offsetY: 0.15, color: 'rgba(55,58,65,0.6)', lineColor: 'rgba(100,105,115,0.5)' },
+    { roughness: 0.8, offsetY: 0.05, color: 'rgba(45,48,55,0.75)', lineColor: 'rgba(120,125,135,0.6)' },
+    { roughness: 0.9, offsetY: -0.05, color: 'rgba(32,34,40,0.85)', lineColor: 'rgba(150,155,168,0.8)' },
+  ];
+  layers.forEach((layer, idx) => {
+    const ridge = generateRidge(w, numPoints, layer.roughness, seed + idx * 99991);
+    const baseY = h * 0.5, amp = h * 0.4;
+    ctx.beginPath(); ctx.moveTo(0, h);
+    for (let i = 0; i < numPoints; i++) ctx.lineTo(i, baseY - ridge[i] * amp + layer.offsetY * h);
+    ctx.lineTo(w, h); ctx.closePath(); ctx.fillStyle = layer.color; ctx.fill();
+    ctx.beginPath();
+    for (let i = 0; i < numPoints; i++) { const y = baseY - ridge[i] * amp + layer.offsetY * h; i === 0 ? ctx.moveTo(i, y) : ctx.lineTo(i, y); }
+    ctx.strokeStyle = layer.lineColor; ctx.lineWidth = idx === 2 ? 1.5 : 0.8; ctx.stroke();
+  });
+}
+function initRidges() { document.querySelectorAll('.ridge-canvas').forEach(drawRidgeCanvas); }
+initRidges();
+let rt; window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(initRidges, 150); });
+</script>
+</body>
+</html>
